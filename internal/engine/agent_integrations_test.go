@@ -15,7 +15,7 @@ func TestDefaultSkillInstallCommandIsNonInteractive(t *testing.T) {
 	want := []string{
 		"npx", "--yes", "skills", "add", "mainline-org/mainline",
 		"--skill", "mainline",
-		"--agent", "codex", "claude-code", "cursor",
+		"--agent", "codex", "claude-code", "cursor", "pi",
 		"--global",
 		"--yes",
 	}
@@ -29,26 +29,33 @@ func TestInstallDefaultSkillSkipsWhenGlobalSkillExists(t *testing.T) {
 	defer cleanup()
 	svc := NewServiceFromRoot(dir)
 
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("PATH", "")
-	skillPath := filepath.Join(home, ".agents", "skills", "mainline", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(skillPath, []byte("# Mainline\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	for _, rel := range []string{
+		filepath.Join(".agents", "skills", "mainline", "SKILL.md"),
+		filepath.Join(".pi", "agent", "skills", "mainline", "SKILL.md"),
+	} {
+		t.Run(rel, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("PATH", "")
+			skillPath := filepath.Join(home, rel)
+			if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(skillPath, []byte("# Mainline\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 
-	got := svc.installDefaultSkill()
-	if !got.Skipped {
-		t.Fatalf("installDefaultSkill should skip when global skill exists: %+v", got)
-	}
-	if got.Installed {
-		t.Fatalf("installDefaultSkill should not report install when it skipped: %+v", got)
-	}
-	if !strings.Contains(got.Error, skillPath) {
-		t.Fatalf("skip reason should mention existing skill path, got %q", got.Error)
+			got := svc.installDefaultSkill()
+			if !got.Skipped {
+				t.Fatalf("installDefaultSkill should skip when global skill exists: %+v", got)
+			}
+			if got.Installed {
+				t.Fatalf("installDefaultSkill should not report install when it skipped: %+v", got)
+			}
+			if !strings.Contains(got.Error, skillPath) {
+				t.Fatalf("skip reason should mention existing skill path, got %q", got.Error)
+			}
+		})
 	}
 }
 

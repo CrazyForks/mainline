@@ -213,6 +213,9 @@ func TestLocalDevWrapperFailsSoft(t *testing.T) {
 	if !strings.Contains(got, "|| exit 0") {
 		t.Fatalf("local-dev wrapper should fail soft: %q", got)
 	}
+	if strings.Contains(got, "exec go run") {
+		t.Fatalf("local-dev wrapper must not exec go run before fail-soft fallback: %q", got)
+	}
 }
 
 func TestUninstallRemovesOnlyManagedHooks(t *testing.T) {

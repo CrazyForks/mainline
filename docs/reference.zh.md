@@ -80,12 +80,18 @@ mainline init --actor-name "<你的名字>"
 
 1. 写入 `.mainline/config.toml` 并配置 Git refspecs。
 2. 安装 Mainline skill，也就是 agent 的完整 workflow 手册。
-3. 安装 Cursor、Claude Code、Codex 等支持的 repo-local hooks。
+3. 安装 Cursor、Claude Code、Codex、Pi 等支持的 repo-local hooks。
 
 `init` 新创建的 hook 配置文件会通过 `.git/info/exclude` 保持为当前 clone
 本地文件，不进入初始 setup commit。如果仓库原本已经 track 某个 agent hook
 文件，Mainline 会尊重这个习惯，把合并后的 hook 更新和其他 init setup 一起
-stage。
+stage。对 Pi 来说，这个新建的 repo-local hook 文件是
+`.pi/extensions/mainline.ts`。
+
+如果某个 repo 在新版 Mainline binary 增加某个 agent 集成之前就已经初始化过，
+再次运行 `mainline init --actor-name ...` 只会更新本地身份，不会重装 hooks。运行
+`mainline hooks install --agent pi` 可以只补装 Pi；运行 `mainline hooks install`
+可以收敛所有支持的 hook 集成。
 
 支持 hooks 的 agent 每次 session start 会自动跑 `mainline sync` 和
 `mainline status`，并把 snapshot 注入上下文。Agent 仍然负责语义判断：什么时候
@@ -413,18 +419,22 @@ snapshot 注入 agent context。它不决定什么时候 start、append、seal �
 ```bash
 mainline hooks list-agents
 mainline hooks install --agent cursor
+mainline hooks install --agent pi
 mainline hooks install --local-dev
 mainline hooks install --bin ./mainline
 mainline hooks status
 mainline hooks uninstall --agent cursor
+mainline hooks uninstall --agent pi
 mainline hooks disable
 mainline hooks enable
 ```
 
+Pi 集成会写入 project-local `.pi/extensions/mainline.ts` 扩展。新 repo 运行 `mainline init --actor-name "alice"` 会自动安装它；已经初始化过的 repo 升级到支持 Pi 的 Mainline binary 后，需要运行一次 `mainline hooks install --agent pi`。Pi 只会在项目被信任后加载 project-local extensions，所以安装后需要 trust/reload 或 restart 当前项目会话。Pi skill 仍然是 workflow authority；hook 只是动态 context provider。Pi 只装共享 Mainline skill 时仍然可以手动遵循 Mainline，但不会收到 session start 和每轮 prompt 的自动上下文。
+
 | Hook event | Mainline action |
 |---|---|
 | `session_start` | 跑 `mainline sync` 和 `mainline status`，并注入 agent context。 |
-| `before_submit_prompt`、`stop`、`subagent_stop`、`session_end` | 只做 webhook fan-out；dispatcher 不碰 engine。 |
+| `user_prompt_submit` / `before_submit_prompt`、`stop`、`subagent_stop`、`pre_compact`、`session_end` | 只做 webhook fan-out；dispatcher 不碰 engine。 |
 
 开关在 `.mainline/config.toml` 的 `[hooks]` 下。
 

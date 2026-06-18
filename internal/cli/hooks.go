@@ -20,6 +20,7 @@ import (
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/claudecode"
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/codex"
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/cursor"
+	_ "github.com/mainline-org/mainline/internal/hooks/agents/pi"
 )
 
 var (
@@ -45,12 +46,13 @@ var (
 var hooksCmd = &cobra.Command{
 	Use:   "hooks",
 	Short: "Install and dispatch agent lifecycle hooks",
-	Long: `Manage agent hook integrations (Cursor, Claude Code, Codex, ...) and
+	Long: `Manage agent hook integrations (Cursor, Claude Code, Codex, Pi, ...) and
 serve as the dispatch entry point invoked by those agents.
 
 Common flows:
   mainline hooks install                  # write repo-local hooks for supported agents
   mainline hooks install --agent cursor   # write only .cursor/hooks.json
+  mainline hooks install --agent pi       # write only .pi/extensions/mainline.ts
   mainline hooks status                   # which agents are wired
   mainline hooks disable                  # soft kill-switch
   mainline hooks uninstall --all          # remove every integration
@@ -139,7 +141,7 @@ var hooksInstallCmd = &cobra.Command{
 		}
 		fmt.Println()
 		fmt.Println("Install scope: repo-local. Mainline writes this repository's agent config files")
-		fmt.Println("and does not inspect or modify global Cursor, Claude Code, or Codex settings.")
+		fmt.Println("and does not inspect or modify global Cursor, Claude Code, Codex, or Pi settings.")
 		fmt.Println("Existing agent sessions may need a new session or app restart before they see")
 		fmt.Println("new repo-local hook config.")
 		fmt.Println()

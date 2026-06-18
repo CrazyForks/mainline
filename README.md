@@ -122,12 +122,31 @@ mainline init --actor-name "alice"
 
 `mainline init` sets up repo-local Mainline state, configures the Git refs
 Mainline needs, installs the Mainline skill, and installs hooks for supported
-agents such as Codex, Claude Code, and Cursor.
+agents such as Codex, Claude Code, Cursor, and Pi. On a newly initialized repo,
+that is enough to create Pi's repo-local extension at `.pi/extensions/mainline.ts`.
 
 Hooks run `mainline sync` and `mainline status` at session start so the agent
 begins with fresh repo state. The hooks do not decide what to do. The agent
 still reads context, records progress, seals the intent, and surfaces conflicts
 through the Mainline skill workflow.
+
+The skill and the hook are complementary. The skill teaches the agent the
+Mainline workflow; the hook only injects fresh repository state into that
+workflow. Pi can still use Mainline from the shared skill without this hook, but
+it will not receive the automatic session-start and per-prompt context.
+
+If a repo was already initialized before your Mainline binary learned Pi hooks,
+re-run hook install to add the new integration:
+
+```bash
+mainline hooks install --agent pi
+# or reinstall every supported hook integration
+mainline hooks install
+```
+
+Pi loads project-local extensions only for trusted projects. After installing
+Pi hooks, trust the project and reload/restart the Pi session so the extension is
+picked up.
 
 Existing agent skill installs are updated by the `skills` CLI, not by
 `mainline agents update` or `mainline init --rewire`. If update cannot infer
@@ -135,7 +154,7 @@ the source, rerun the matching `skills add` command:
 
 ```bash
 npx --yes skills update mainline --global --yes
-npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor --global --yes
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor pi --global --yes
 ```
 
 On an existing repository, `mainline init` treats the current `main` HEAD as the

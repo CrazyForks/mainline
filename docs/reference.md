@@ -87,12 +87,18 @@ mainline init --actor-name "<your name>"
 1. Writes `.mainline/config.toml` and configures Git refspecs.
 2. Installs the Mainline skill, which is the complete workflow manual for agents.
 3. Installs repo-local hooks for supported agents such as Cursor, Claude Code,
-   and Codex.
+   Codex, and Pi.
 
 Fresh hook config files created by `init` are kept clone-local through
 `.git/info/exclude` so they do not appear in the initial setup commit. If a repo
 already tracks an agent hook file, Mainline preserves that convention and stages
-the merged hook update with the rest of the init setup.
+the merged hook update with the rest of the init setup. For Pi, this fresh
+repo-local hook file is `.pi/extensions/mainline.ts`.
+
+If a repo was already initialized before a newer Mainline binary added another
+agent integration, `mainline init --actor-name ...` updates local identity but
+does not reinstall hooks. Run `mainline hooks install --agent pi` to add Pi only,
+or `mainline hooks install` to converge every supported hook integration.
 
 At every supported session start, hooks run `mainline sync` and
 `mainline status`, then inject the snapshot into the agent's context. The agent
@@ -457,20 +463,24 @@ append, seal, or resolve conflicts.
 ```bash
 mainline hooks list-agents
 mainline hooks install --agent cursor
+mainline hooks install --agent pi
 mainline hooks install --local-dev
 mainline hooks install --bin ./mainline
 mainline hooks status
 mainline hooks uninstall --agent cursor
+mainline hooks uninstall --agent pi
 mainline hooks disable
 mainline hooks enable
 ```
+
+For Pi, install writes a project-local `.pi/extensions/mainline.ts` extension. A fresh `mainline init --actor-name "alice"` installs it automatically; already-initialized repos that upgrade to a Pi-capable Mainline binary should run `mainline hooks install --agent pi` once. Pi loads project-local extensions only for trusted projects, so trust/reload or restart the project session after installing. The Pi skill remains the workflow authority; the hook is only the dynamic context provider. A Pi setup with the shared Mainline skill but without this hook can still follow Mainline manually, but it will not receive automatic session-start and per-prompt context.
 
 What hooks do:
 
 | Hook event | Mainline action |
 |---|---|
 | `session_start` | Run `mainline sync` and `mainline status`; inject the snapshot into the agent context. |
-| `before_submit_prompt`, `stop`, `subagent_stop`, `session_end` | Webhook fan-out only; the dispatcher does not touch the engine. |
+| `user_prompt_submit` / `before_submit_prompt`, `stop`, `subagent_stop`, `pre_compact`, `session_end` | Webhook fan-out only; the dispatcher does not touch the engine. |
 
 Per-toggle controls live in `.mainline/config.toml` under `[hooks]`.
 

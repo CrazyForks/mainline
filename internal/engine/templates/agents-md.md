@@ -490,7 +490,7 @@ The verdict surfaces in `mainline log`'s `[check:X]` column.
 ### Optional: agent hooks (opt-in context provider)
 
 If `mainline hooks install <agent>` has been run for your agent
-runtime (Cursor today; Codex / Claude Code reserved), the hook layer
+runtime (Cursor, Codex, Claude Code, or Pi), the hook layer
 runs **two mechanical operations** at session start and injects a
 **status snapshot** into your system context — nothing more:
 
