@@ -143,20 +143,82 @@ func TestPropertyClassifyRetrievalStatusAllBranchesReachable(t *testing.T) {
 	now := nowForBranchTest()
 	seen := map[string]bool{}
 
-	// Drive at most a few hundred iterations; reachability is a
-	// universal-existence claim (∃ input → status), so even one hit
-	// per branch is enough.
+	for _, tc := range []struct {
+		name  string
+		iv    domain.IntentView
+		churn map[string]int
+		want  string
+	}{
+		{
+			name: "current",
+			iv: domain.IntentView{
+				IntentID: "int_current",
+				Status:   domain.StatusMerged,
+				SealedAt: now.Add(-7 * 24 * time.Hour).Format(time.RFC3339),
+			},
+			churn: map[string]int{},
+			want:  RetrievalStatusCurrent,
+		},
+		{
+			name: "superseded",
+			iv: domain.IntentView{
+				IntentID: "int_superseded",
+				Status:   domain.StatusMerged,
+				StatusEvidence: domain.StatusEvidence{
+					SupersededByIntent: "int_newer",
+				},
+				SealedAt: now.Add(-7 * 24 * time.Hour).Format(time.RFC3339),
+			},
+			churn: map[string]int{},
+			want:  RetrievalStatusSuperseded,
+		},
+		{
+			name: "abandoned",
+			iv: domain.IntentView{
+				IntentID: "int_abandoned",
+				Status:   domain.StatusAbandoned,
+				SealedAt: now.Add(-7 * 24 * time.Hour).Format(time.RFC3339),
+			},
+			churn: map[string]int{},
+			want:  RetrievalStatusAbandoned,
+		},
+		{
+			name: "stale",
+			iv: domain.IntentView{
+				IntentID: "int_stale",
+				Status:   domain.StatusMerged,
+				SealedAt: now.Add(-7 * 24 * time.Hour).Format(time.RFC3339),
+				Fingerprint: &domain.SemanticFingerprint{
+					FilesTouched: []string{"src/hot.go"},
+				},
+			},
+			churn: map[string]int{
+				idForFile("int_stale", "src/hot.go"): staleFileChurnThreshold,
+			},
+			want: RetrievalStatusStale,
+		},
+	} {
+		got := classifyRetrievalStatus(tc.iv, tc.churn, now)
+		if got != tc.want {
+			t.Fatalf("%s witness classified as %q, want %q", tc.name, got, tc.want)
+		}
+		seen[got] = true
+	}
+
+	// Rapid still explores adversarial combinations; explicit
+	// witnesses above keep the reachability claim stable even when CI
+	// lowers -rapid.checks.
 	rapid.Check(t, func(rt *rapid.T) {
 		iv := drawIntentView(rt, "iv")
 		churn := drawChurnMap(rt, "churn", iv.IntentID)
 		got := classifyRetrievalStatus(iv, churn, now)
 		seen[got] = true
 
-		// Once all four are seen, accept; otherwise rapid will keep
-		// drawing. This is a one-way property — failure means
-		// "rapid couldn't find an input for status X".
-		if len(seen) == 4 {
-			return
+		switch got {
+		case RetrievalStatusCurrent, RetrievalStatusSuperseded,
+			RetrievalStatusAbandoned, RetrievalStatusStale:
+		default:
+			rt.Fatalf("unknown retrieval status %q for iv=%+v churn=%+v", got, iv, churn)
 		}
 	})
 
