@@ -107,7 +107,7 @@ func defaultSkillInstallCommand(source string) []string {
 	return []string{
 		"npx", "--yes", "skills", "add", source,
 		"--skill", "mainline",
-		"--agent", "codex", "claude-code", "cursor",
+		"--agent", "codex", "claude-code", "cursor", "pi",
 		"--global",
 		"--yes",
 	}

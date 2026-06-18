@@ -649,13 +649,13 @@ Do not rewrite published history unless the user explicitly asks.
 Install this skill with `npx skills` for supported target agents:
 
 ```bash
-npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor --global --yes
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor pi --global --yes
 ```
 
 For local development from this repository:
 
 ```bash
-npx --yes skills add ./skills/mainline --skill mainline --agent codex claude-code cursor --global --yes
+npx --yes skills add ./skills/mainline --skill mainline --agent codex claude-code cursor pi --global --yes
 ```
 
 `mainline init` best-effort installs the default skill and hooks. Existing

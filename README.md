@@ -149,7 +149,7 @@ the source, rerun the matching `skills add` command:
 
 ```bash
 npx --yes skills update mainline --global --yes
-npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor --global --yes
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor pi --global --yes
 ```
 
 On an existing repository, `mainline init` treats the current `main` HEAD as the
