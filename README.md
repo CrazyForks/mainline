@@ -9,91 +9,125 @@
 - Detailed reference: [docs/reference.md](./docs/reference.md)
 - 中文版本: [README.zh.md](./README.zh.md)
 
-**We have code review. Now we need intent review.**
+**Git for the AI era.**
 
-Mainline is a Git-native memory layer for coding agents. It gives agents and
-reviewers repo memory before the diff: prior decisions, constraints, abandoned
-approaches, validation notes, and related in-flight work.
+Mainline lets agents save developer intent and decisions to Git alongside the
+code.
 
-AI agents make code cheap to produce and harder to review. Mainline makes the
-intent reviewable before the generated code lands.
+Git already records the history of the code. Mainline adds the engineering
+judgment behind agent work to the same collaboration layer: the original goal,
+reasoning path, key decisions, trade-offs, validation, explicit constraints,
+abandoned routes, and the commit that eventually carried the work.
 
-Review the intent before you review the code.
+Teams do not need to keep long AI transcripts around, and they do not need to
+invent a separate shared memory service. Agents read prior judgment from Git,
+do the work, and write the new judgment back to Git.
 
 <img width="2530" height="756" alt="Mainline overview" src="https://github.com/user-attachments/assets/e337559b-72cd-4fd4-b139-16754cc675f6" />
 
 <img width="1600" alt="Mainline Hub showing a sealed engineering intent" src="https://github.com/user-attachments/assets/2c740a17-019f-4f16-bd8a-e812d8a78f32" />
 
-## The Problem
+## Why It Matters
 
-Code review was built for a world where humans wrote most of the code. The diff
-was expensive, so it was usually small enough for reviewers to infer the intent.
+Agents can move fast, but code alone does not carry the full history. Mainline
+is not another knowledge base for humans to maintain; it is a tool agents can
+read and write as naturally as they use Git.
 
-Agent work changes that. A coding agent can produce a wide diff quickly. The
-hard review question moves up a level:
+### Stop Repeating Abandoned Paths
 
-- is this the right problem to solve?
-- did the agent understand the prior decision?
-- is it repeating an abandoned approach?
-- did it miss a reviewer constraint?
-- is another agent already working on a related intent?
-- does the validation actually match the reason for the change?
+Some approaches were tried, rejected, and then disappeared from the code.
 
-If reviewers only see the final diff, they are forced to reconstruct intent
-after the work is already shaped.
+Maybe the team once tried to process billing events through a Redis queue, then
+abandoned it after replication lag caused duplicate charges. The next agent may
+grep its way to a half-finished TODO and decide it only needs to complete the
+work. Mainline tells the agent before it edits: this path was already tried,
+where it failed, and why it should not be revived casually.
 
-### A Realistic Failure
+### Catch Logical Conflicts Before Git Conflicts
 
-A billing team moves invoice export to a new `/exports/invoices` API, but keeps
-the old `/reports/invoices.csv` route because three enterprise customers still
-pull it from overnight reconciliation jobs until their migration window closes.
+Git can detect two edits to the same line. It cannot tell when two agents are
+changing the same product logic in incompatible ways.
 
-Three weeks later, a coding agent is asked to clean up legacy reporting code.
-The old route has little product traffic, the new API is where active UI code
-points, and the compatibility branch looks removable. The agent deletes it.
-Unit tests pass. The dashboard looks clean. The next morning, customer finance
-jobs fail.
+If another agent has already started changing a billing rule, there may be no PR
+yet, but there is already an intent. Other agents can see that intent during
+preflight and avoid the collision from the start by changing scope, splitting
+the boundary, or syncing with the teammate first.
 
-The important fact was not visible in the diff: **do not remove the legacy CSV
-invoice export until the enterprise reconciliation migration is complete**.
+### Read Constraints Before Editing Risky Code
 
-## What Mainline Does
+Some code looks odd because it carries real history, and comments rarely capture
+all of it.
 
-Mainline records the intent behind engineering work and makes it available
-before the next risky edit.
+An auth middleware path may exist only because a previous cleanup caused a
+rollback. Mainline can put the rollback reason, module constraints, and related
+intent in front of the agent before it edits, so the agent understands why that
+code is not safe to "clean up" blindly.
 
-An intent captures:
+### Review The Intent Behind The Diff
 
-- the user goal,
-- why the work exists,
-- decisions and rejected alternatives,
-- validation and review notes,
-- explicit constraints, risks, and follow-ups,
-- related files and subsystems,
-- in-flight overlap with other agents or teammates,
-- the commit that eventually carried the work onto `main`.
+Reviewers should see more than the code diff. They should see the implementer's
+original goal, reasoning path, and key decisions.
 
-Mainline is not a Git replacement, PR system, session recorder, RAG index, or
-productivity dashboard. It is repo-local engineering memory that travels with
-your code through Git refs and Git notes. Read that memory with `mainline log`,
-`mainline show <id>`, or `mainline hub open`.
+Review no longer has to start by guessing why a diff exists. The reviewer can
+read the intent first, then verify whether the implementation matches that
+intent. The conversation moves earlier, toward direction, risk, and trade-offs,
+instead of only catching syntax and edge cases at the end.
 
-## Why Comments Are Not Enough
+## Git-Native Workflow
 
-Good comments still matter. If a function has a local invariant, write it down.
+Mainline's storage and collaboration model is designed around Git.
 
-But comments are a weak place to store repo-level intent:
+| Capability | How Mainline Works |
+|---|---|
+| Data lives in the Git repo | Intent event logs live in Git refs; commit pins live in Git notes |
+| Git-native workflow | Intent travels through fetch, branch, merge, and fork workflows |
+| Agents read and write automatically | Hooks, the Mainline skill, and the CLI let agents read history, record judgment, and seal intent |
+| No vendor lock-in | Codex, Claude Code, Cursor, Pi, Copilot, and internal agents can work from the same repo facts |
+| No disruption to your workflow | Keep using your editor, agent, GitHub / GitLab PRs, and CI as usual |
 
-- the agent may plan the change before opening the right file,
-- the decision may span services, release steps, customer migrations, or policy,
-- abandoned approaches often live outside current code,
-- comments rarely show in-flight work from another agent,
-- stale comments do not carry lifecycle, validation, or reviewer context.
+Mainline does not replace Git. It puts the engineering judgment future agents
+need back into Git.
 
-Mainline does not depend on the next agent finding the right comment. It gives
-agents and reviewers a queryable intent layer before the diff.
+## How Agents Use Mainline
 
-## Install
+Mainline is mainly operated by agents. After the initial setup, developers do
+not need extra daily commands, and their existing AI coding workflow does not
+change.
+
+It plugs into agent workflows through three pieces:
+
+- **Agent hooks**: sync repo intent at session start and inject fresh state;
+- **Mainline skill**: tells the agent when to read history, record judgment, and stop;
+- **CLI**: provides auditable commands such as `preflight`, `start`, `append`, and `seal`.
+
+If an agent does not have a hook integration yet, it can still use Mainline
+through the skill and CLI. The rule stays the same: read prior judgment from Git
+before editing, then write the new judgment back to Git when the work is done.
+
+## The Full Loop
+
+A typical agent run looks like this:
+
+```bash
+mainline preflight --json
+mainline start "clean up old export logic" --json
+mainline append "confirmed the legacy CSV route is still used for overnight enterprise reconciliation" --json
+mainline seal --prepare --json > .ml-cache/seal.json
+mainline seal --submit --json < .ml-cache/seal.json
+```
+
+Those steps map to the agent loop:
+
+1. **Get context**: the agent checks the current branch, prior intents, collaboration risks, and relevant constraints.
+2. **Do the work**: it reads code, edits, validates, and responds to reviewer feedback as usual.
+3. **Record pivots**: when a decision, rejected path, risk change, or validation result matters, `append` records it.
+4. **Seal the decision record**: `seal` turns the work into intent that can be reviewed, synced, and retrieved by future agents.
+5. **Let it flow through Git**: Git refs and notes carry the intent through fetch, branch, and merge workflows.
+
+Future agents do not have to search an old chat transcript for clues. They
+inherit context from the history the repository already carries.
+
+## Quick Start
 
 Install the CLI:
 
@@ -102,7 +136,7 @@ curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.
 mainline doctor --setup
 ```
 
-Other install paths are available in the detailed reference:
+You can also install with Go:
 
 ```bash
 go install github.com/mainline-org/mainline@latest
@@ -111,131 +145,51 @@ go install github.com/mainline-org/mainline@latest
 Downloadable release archives and checksums are published on
 [GitHub Releases](https://github.com/mainline-org/mainline/releases/latest).
 
-## Getting Your Agent Started
-
-Initialize a repository once:
+Initialize each repo once:
 
 ```bash
 cd your-repo
 mainline init --actor-name "alice"
 ```
 
-`mainline init` sets up repo-local Mainline state, configures the Git refs
-Mainline needs, installs the Mainline skill, and installs hooks for supported
-agents such as Codex, Claude Code, Cursor, and Pi. On a newly initialized repo,
-that is enough to create Pi's repo-local extension at `.pi/extensions/mainline.ts`.
+`mainline init` will:
 
-Hooks run `mainline sync` and `mainline status` at session start so the agent
-begins with fresh repo state. The hooks do not decide what to do. The agent
-still reads context, records progress, seals the intent, and surfaces conflicts
-through the Mainline skill workflow.
+- write repo-local Mainline configuration;
+- configure the required Git refs and notes;
+- install the Mainline skill;
+- install repo-local hooks for supported agents such as Codex, Claude Code, Cursor, and Pi;
+- record the current `main` HEAD as the coverage baseline for an existing repository.
 
-The skill and the hook are complementary. The skill teaches the agent the
-Mainline workflow; the hook only injects fresh repository state into that
-workflow. Pi can still use Mainline from the shared skill without this hook, but
-it will not receive the automatic session-start and per-prompt context.
-
-If a repo was already initialized before your Mainline binary learned Pi hooks,
-re-run hook install to add the new integration:
+If a repository was initialized before a given agent hook existed, install hooks
+again:
 
 ```bash
-mainline hooks install --agent pi
-# or reinstall every supported hook integration
 mainline hooks install
+# or only install one agent integration
+mainline hooks install --agent pi
 ```
 
-Pi loads project-local extensions only for trusted projects. After installing
-Pi hooks, trust the project and reload/restart the Pi session so the extension is
-picked up.
-
-Existing agent skill installs are updated by the `skills` CLI, not by
-`mainline agents update` or `mainline init --rewire`. If update cannot infer
-the source, rerun the matching `skills add` command:
+Use the `skills` CLI to update the global skill:
 
 ```bash
-npx --yes skills update mainline --global --yes
 npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor pi --global --yes
 ```
 
-On an existing repository, `mainline init` treats the current `main` HEAD as the
-coverage baseline. Older history is skipped by default; new commits should have
-intent coverage.
+## Commands Humans Usually Run
 
-## What Agents Run
-
-For non-trivial work, the agent-facing loop is:
-
-```bash
-mainline preflight --json
-mainline start "<the user's goal>" --json
-mainline append "<meaningful progress>" --json
-mainline seal --prepare --json > .ml-cache/seal.json
-mainline seal --submit --json < .ml-cache/seal.json
-```
-
-`preflight` is the readiness and stop-line gate. It tells the agent whether to
-continue, inspect overlaps, or stop before lifecycle advancement. Read-only
-diagnosis or proposal-only work can stop after read-only inspection; it should
-not run `start` until the task crosses into non-trivial edits or another
-durable engineering record. `start` then claims the unit of work. `append`
-records meaningful turns: decisions, pivots, completed slices, or validation
-that changes confidence. `seal` turns the work into reviewable intent with a
-summary, decisions, rejected alternatives, validation notes, and a semantic
-fingerprint.
-
-Review autonomy may push a non-main branch and open or update a PR. It never
-authorizes pushing `main`, merging, releasing, or deploying.
-
-Agents should run this before architecture changes, refactors, migrations,
-deletions, auth/billing/permissions/data-model work, release/CI changes, and
-questions like "can we delete this?" or "was this tried before?"
-
-Tiny typo fixes, pure formatting, and one-line obvious syntax repairs can skip
-Mainline.
-
-## Workflow Fit
-
-Mainline sits beside your normal Git workflow.
-
-1. **Before editing**, the agent reads relevant intent with `mainline context`.
-2. **During the work**, it records meaningful turns with `start` and `append`.
-3. **Before review**, it seals the intent with decisions, validation notes, and
-   a semantic fingerprint.
-4. **During review**, humans inspect the intent and collaboration surface before
-   or alongside the code diff.
-5. **After merge**, `mainline sync` links the merged commit back to the intent.
-6. **Next time**, future agents read that history before they edit.
-
-The point is not ceremony. The point is that the team can review the intended
-change, not just the generated code.
-
-## CLI And Hub
-
-Mainline has two surfaces:
-
-- **CLI for action:** initialize the repo, sync state, record intent, inspect
-  history, find gaps, and generate review material.
-- **Hub for reading:** browse intent history, pending work, file-level context,
-  coverage gaps, risks, and collaboration signals.
-
-After at least one intent exists, open Hub:
-
-```bash
-mainline hub open
-```
-
-Useful human commands:
+Most day-to-day commands are run by agents. Humans usually read state, inspect
+intent, and open Hub.
 
 ```bash
 mainline status --actionable
 mainline log
 mainline show <intent_id>
 mainline gaps
+mainline hub open
 ```
 
-`mainline hub open` is most useful after the agent has produced at least one
-intent. On a fresh repo, run the agent loop first, then open Hub to review what
-was recorded.
+Hub lets you browse intent history, pending work, file-level context, coverage
+gaps, risks, and collaboration signals.
 
 For static export:
 
@@ -243,49 +197,47 @@ For static export:
 mainline hub export ./mainline-hub
 ```
 
-Fork PRs may be shown as imported external contributions when the contributor
-has no upstream-visible Mainline actor log:
-
-```bash
-mainline hub export ./mainline-hub --external-contributions fork-prs.json
-```
-
-If the fork contributor also uses Mainline, prefer importing their actor log
-first. This is an explicit trust-boundary action by an upstream maintainer:
-
-```bash
-mainline actor import --actor actor_jiangge --remote jiangge
-```
-
-The command fetches that actor's `refs/mainline/actors/<actor>/log` from the
-fork into a temporary import ref, validates the events, accepts the actor log
-into the upstream namespace, best-effort fetches referenced fork branches into
-`refs/mainline/imports/<actor>/branches/*`, rebuilds the view, and runs normal
-auto-pin. The contributor's intent remains author-sealed, while Hub shows
-provenance such as `accepted_actor_log`, who accepted it, whether it was
-verified, and which imported code refs made the fork commits reachable.
-The import path requires at least one author-sealed intent and does not import
-fork-side constraints, risks, follow-ups, check judgments, or merge
-acknowledgements as upstream team signals. Upstream pin notes remain the source
-of merged evidence.
-
-Upstream repositories can install `.github/workflows/mainline-fork-pr-import.yml`
-to run this import automatically after a fork PR is merged. The action uses the
-upstream `pull_request_target` token, checks out only trusted upstream code,
-discovers published fork actor logs, and imports only a unique match; reruns are
-idempotent with manual `actor import`.
-
-The `--external-contributions` file is only the fallback when no author-owned
-actor log is available. Those records are labeled with provenance such as
-`github_pr_imported` and `not author-sealed`. Hub does not treat GitHub PR
-metadata or an empty `## Mainline Intent` PR-body template as a
-contributor-authored sealed Mainline intent.
-
 The public hosted Hub for Mainline is https://mainline.sh/hub/.
 
 The detailed reference covers install variants, recovery rules, hook behavior,
-webhooks, configuration, static Hub publishing, storage layout, and development commands:
+webhooks, configuration, static Hub publishing, storage layout, and development
+commands: [docs/reference.md](./docs/reference.md).
+
+## Team Collaboration
+
+Mainline gets its collaboration model from Git.
+
+Teammates, branches, forks, CI, and other agents can all share the same intent
+history as long as they can reach the same repository. A teammate should not
+have to ask "why did yesterday's agent do this?" or dig through somebody else's
+local chat transcript.
+
+Typical collaboration patterns:
+
+- New teammates read `mainline log` and Hub to catch up on recent project judgment.
+- Reviewers read intent before reading the diff.
+- Agents see nearby intent during preflight and avoid starting with a conflicting plan.
+- Fork contributors can publish their actor log, and upstream maintainers can explicitly accept it.
+- After merge, the commit and intent are pinned together as context for the next round of work.
+
+Fork contributor flows, external PRs, and actor-log import are covered in
 [docs/reference.md](./docs/reference.md).
+
+## When To Use It
+
+Use Mainline before agent work that is more than a tiny edit:
+
+- architecture changes,
+- refactors and migrations,
+- deletions,
+- auth, billing, permissions, and data model changes,
+- release and CI changes,
+- questions like "can we delete this?",
+- questions like "was this tried before?",
+- any work where another agent or teammate might be operating nearby.
+
+Skip it for narrow typo fixes, pure formatting, and one-line obvious syntax
+repairs.
 
 ## Does It Work?
 
@@ -301,27 +253,13 @@ superseded decisions, and conventions outside source code.
 
 Read the full methodology and caveats in [docs/eval-results.md](./docs/eval-results.md).
 
-## When To Use It
-
-Use Mainline before non-trivial agent work:
-
-- architecture changes,
-- refactors and migrations,
-- deletions,
-- auth, billing, permissions, and data model changes,
-- release and CI changes,
-- questions like "can we delete this?" or "was this tried before?",
-- any work where another agent or teammate might be operating nearby.
-
-Skip it for narrow typo fixes, pure formatting, and one-line obvious syntax
-repairs.
-
 ## Learn More
 
 - Detailed reference: [docs/reference.md](./docs/reference.md)
 - Eval report: [docs/eval-results.md](./docs/eval-results.md)
 - Intent Record Spec: [docs/specs/intent-record-v0.md](./docs/specs/intent-record-v0.md)
 - Agent Context Protocol: [docs/specs/agent-context-protocol-v0.md](./docs/specs/agent-context-protocol-v0.md)
+- Agent Autonomy Stop Lines: [docs/specs/agent-autonomy-stop-lines-v0.md](./docs/specs/agent-autonomy-stop-lines-v0.md)
 - Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Security: [SECURITY.md](./SECURITY.md)
 - Changelog: [CHANGELOG.md](./CHANGELOG.md)
@@ -338,6 +276,16 @@ make lint
 Core subsystems are covered with property-based tests. The fast PR gate is
 `make quick-test`; broader PBT coverage is documented in
 [docs/reference.md](./docs/reference.md#development-and-testing).
+
+## Project Status
+
+Mainline is in public alpha. The CLI, skill, hooks, Hub, and Git refs / notes
+storage model are usable today, but the schema, agent workflow guidance, and
+Hosted Hub experience are still evolving.
+
+Mainline is a good fit for teams that already use agents in real engineering
+workflows and are starting to worry about context getting lost. Feedback is
+welcome.
 
 ## License
 
