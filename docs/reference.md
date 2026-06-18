@@ -92,7 +92,13 @@ mainline init --actor-name "<your name>"
 Fresh hook config files created by `init` are kept clone-local through
 `.git/info/exclude` so they do not appear in the initial setup commit. If a repo
 already tracks an agent hook file, Mainline preserves that convention and stages
-the merged hook update with the rest of the init setup.
+the merged hook update with the rest of the init setup. For Pi, this fresh
+repo-local hook file is `.pi/extensions/mainline.ts`.
+
+If a repo was already initialized before a newer Mainline binary added another
+agent integration, `mainline init --actor-name ...` updates local identity but
+does not reinstall hooks. Run `mainline hooks install --agent pi` to add Pi only,
+or `mainline hooks install` to converge every supported hook integration.
 
 At every supported session start, hooks run `mainline sync` and
 `mainline status`, then inject the snapshot into the agent's context. The agent
@@ -467,7 +473,7 @@ mainline hooks disable
 mainline hooks enable
 ```
 
-For Pi, install writes a project-local `.pi/extensions/mainline.ts` extension. Pi loads project-local extensions only for trusted projects, so trust/restart the project session after installing.
+For Pi, install writes a project-local `.pi/extensions/mainline.ts` extension. A fresh `mainline init --actor-name "alice"` installs it automatically; already-initialized repos that upgrade to a Pi-capable Mainline binary should run `mainline hooks install --agent pi` once. Pi loads project-local extensions only for trusted projects, so trust/reload or restart the project session after installing.
 
 What hooks do:
 

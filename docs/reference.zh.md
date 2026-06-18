@@ -85,7 +85,13 @@ mainline init --actor-name "<你的名字>"
 `init` 新创建的 hook 配置文件会通过 `.git/info/exclude` 保持为当前 clone
 本地文件，不进入初始 setup commit。如果仓库原本已经 track 某个 agent hook
 文件，Mainline 会尊重这个习惯，把合并后的 hook 更新和其他 init setup 一起
-stage。
+stage。对 Pi 来说，这个新建的 repo-local hook 文件是
+`.pi/extensions/mainline.ts`。
+
+如果某个 repo 在新版 Mainline binary 增加某个 agent 集成之前就已经初始化过，
+再次运行 `mainline init --actor-name ...` 只会更新本地身份，不会重装 hooks。运行
+`mainline hooks install --agent pi` 可以只补装 Pi；运行 `mainline hooks install`
+可以收敛所有支持的 hook 集成。
 
 支持 hooks 的 agent 每次 session start 会自动跑 `mainline sync` 和
 `mainline status`，并把 snapshot 注入上下文。Agent 仍然负责语义判断：什么时候
@@ -423,7 +429,7 @@ mainline hooks disable
 mainline hooks enable
 ```
 
-Pi 集成会写入 project-local `.pi/extensions/mainline.ts` 扩展。Pi 只会在项目被信任后加载 project-local extensions，所以安装后需要 trust/restart 当前项目会话。
+Pi 集成会写入 project-local `.pi/extensions/mainline.ts` 扩展。新 repo 运行 `mainline init --actor-name "alice"` 会自动安装它；已经初始化过的 repo 升级到支持 Pi 的 Mainline binary 后，需要运行一次 `mainline hooks install --agent pi`。Pi 只会在项目被信任后加载 project-local extensions，所以安装后需要 trust/reload 或 restart 当前项目会话。
 
 | Hook event | Mainline action |
 |---|---|

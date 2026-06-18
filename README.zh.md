@@ -125,11 +125,25 @@ mainline init --actor-name "alice"
 
 `mainline init` 会写入 repo-local Mainline 状态，配置需要的 Git refs，安装
 Mainline skill，并给 Codex、Claude Code、Cursor、Pi 等支持的 agent 安装 hooks。
+对新初始化的 repo 来说，这一步已经足够创建 Pi 的 repo-local 扩展
+`.pi/extensions/mainline.ts`。
 
 Hooks 会在 session start 跑 `mainline sync` 和 `mainline status`，让 agent 一
 开始就拿到新鲜的 repo 状态。但 hooks 不替 agent 做语义判断。什么时候读
 context、什么时候 append、怎么 seal、是否有 conflict，仍然由 agent 按 Mainline
 skill workflow 执行。
+
+如果某个 repo 在 Mainline binary 支持 Pi hooks 之前就已经初始化过，需要重新安装
+hooks 来补上新的 Pi 集成：
+
+```bash
+mainline hooks install --agent pi
+# 或重新安装所有支持的 hook 集成
+mainline hooks install
+```
+
+Pi 只会在项目被信任后加载 project-local extensions。安装 Pi hooks 后，需要 trust
+当前项目并 reload/restart Pi 会话，扩展才会生效。
 
 已有项目接入时，`mainline init` 会把当前 `main` HEAD 当作 coverage baseline。
 更早的历史默认 skipped；之后的新 commit 应该有 intent coverage。
