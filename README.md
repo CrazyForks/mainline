@@ -130,6 +130,11 @@ begins with fresh repo state. The hooks do not decide what to do. The agent
 still reads context, records progress, seals the intent, and surfaces conflicts
 through the Mainline skill workflow.
 
+The skill and the hook are complementary. The skill teaches the agent the
+Mainline workflow; the hook only injects fresh repository state into that
+workflow. Pi can still use Mainline from the shared skill without this hook, but
+it will not receive the automatic session-start and per-prompt context.
+
 If a repo was already initialized before your Mainline binary learned Pi hooks,
 re-run hook install to add the new integration:
 

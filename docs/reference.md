@@ -473,7 +473,7 @@ mainline hooks disable
 mainline hooks enable
 ```
 
-For Pi, install writes a project-local `.pi/extensions/mainline.ts` extension. A fresh `mainline init --actor-name "alice"` installs it automatically; already-initialized repos that upgrade to a Pi-capable Mainline binary should run `mainline hooks install --agent pi` once. Pi loads project-local extensions only for trusted projects, so trust/reload or restart the project session after installing.
+For Pi, install writes a project-local `.pi/extensions/mainline.ts` extension. A fresh `mainline init --actor-name "alice"` installs it automatically; already-initialized repos that upgrade to a Pi-capable Mainline binary should run `mainline hooks install --agent pi` once. Pi loads project-local extensions only for trusted projects, so trust/reload or restart the project session after installing. The Pi skill remains the workflow authority; the hook is only the dynamic context provider. A Pi setup with the shared Mainline skill but without this hook can still follow Mainline manually, but it will not receive automatic session-start and per-prompt context.
 
 What hooks do:
 

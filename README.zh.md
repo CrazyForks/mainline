@@ -133,6 +133,10 @@ Hooks 会在 session start 跑 `mainline sync` 和 `mainline status`，让 agent
 context、什么时候 append、怎么 seal、是否有 conflict，仍然由 agent 按 Mainline
 skill workflow 执行。
 
+Skill 和 hook 是互补关系：skill 教 agent 走 Mainline workflow，hook 只把新鲜的
+repo 状态注入这个 workflow。Pi 只装共享 skill 时仍然可以自然使用 Mainline；没装
+hook 时只是少了 session start 和每轮 prompt 的自动上下文注入。
+
 如果某个 repo 在 Mainline binary 支持 Pi hooks 之前就已经初始化过，需要重新安装
 hooks 来补上新的 Pi 集成：
 

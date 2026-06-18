@@ -429,7 +429,7 @@ mainline hooks disable
 mainline hooks enable
 ```
 
-Pi 集成会写入 project-local `.pi/extensions/mainline.ts` 扩展。新 repo 运行 `mainline init --actor-name "alice"` 会自动安装它；已经初始化过的 repo 升级到支持 Pi 的 Mainline binary 后，需要运行一次 `mainline hooks install --agent pi`。Pi 只会在项目被信任后加载 project-local extensions，所以安装后需要 trust/reload 或 restart 当前项目会话。
+Pi 集成会写入 project-local `.pi/extensions/mainline.ts` 扩展。新 repo 运行 `mainline init --actor-name "alice"` 会自动安装它；已经初始化过的 repo 升级到支持 Pi 的 Mainline binary 后，需要运行一次 `mainline hooks install --agent pi`。Pi 只会在项目被信任后加载 project-local extensions，所以安装后需要 trust/reload 或 restart 当前项目会话。Pi skill 仍然是 workflow authority；hook 只是动态 context provider。Pi 只装共享 Mainline skill 时仍然可以手动遵循 Mainline，但不会收到 session start 和每轮 prompt 的自动上下文。
 
 | Hook event | Mainline action |
 |---|---|

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -35,8 +36,11 @@ func TestInstallWritesManagedExtensionAndIsIdempotent(t *testing.T) {
 		managedMarker,
 		`const MAINLINE_COMMAND_MODE = "bin";`,
 		`const MAINLINE_COMMAND = "/tmp/mainline";`,
+		`const MAINLINE_COMMAND_CWD: string | undefined = undefined;`,
 		`"hooks", "pi"`,
 		`pi.on("before_agent_start"`,
+		`debug("running " + hookName + " in " + commandCwd);`,
+		`debug("exited " + hookName + " with code " + code`,
 		`systemPromptAppend`,
 	} {
 		if !strings.Contains(text, want) {
@@ -86,6 +90,9 @@ func TestDefaultInstallUsesLocalDevInMainlineSourceRepo(t *testing.T) {
 	if !strings.Contains(text, `const MAINLINE_COMMAND = "go";`) || !strings.Contains(text, `"run", ".", "hooks", "pi"`) {
 		t.Fatalf("expected local-dev invocation in extension:\n%s", text)
 	}
+	if want := `const MAINLINE_COMMAND_CWD: string | undefined = ` + strconv.Quote(dir) + `;`; !strings.Contains(text, want) {
+		t.Fatalf("expected local-dev command cwd %q in extension:\n%s", want, text)
+	}
 
 	st, err := (Agent{}).InstallationStatus(dir)
 	if err != nil {
@@ -119,6 +126,76 @@ func TestInstallRefusesUnmanagedExtensionUnlessForced(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), managedMarker) {
 		t.Fatalf("forced install did not write managed extension:\n%s", raw)
+	}
+}
+
+func TestInstallationStatusDetectsMissingPiEventAndRepair(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"}); err != nil {
+		t.Fatal(err)
+	}
+	extPath := filepath.Join(dir, ".pi", "extensions", "mainline.ts")
+	raw, err := os.ReadFile(extPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	text = strings.Replace(text, `pi.on("agent_end", async (event, ctx) => {`, `/* missing agent_end */`, 1)
+	if err := os.WriteFile(extPath, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Installed || !st.NeedsRepair || st.HookCount != st.ExpectedHookCount-1 || !strings.Contains(strings.Join(st.RepairReasons, "\n"), "agent_end") {
+		t.Fatalf("expected missing agent_end hook to need repair: %#v", st)
+	}
+
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: "/tmp/mainline"}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.NeedsRepair || st.HookCount != st.ExpectedHookCount {
+		t.Fatalf("install should repair missing Pi event: %#v", st)
+	}
+}
+
+func TestInstallationStatusDetectsLegacyLocalDevExtensionWithoutCommandCWD(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module github.com/mainline-org/mainline\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	extPath := filepath.Join(dir, ".pi", "extensions", "mainline.ts")
+	raw, err := os.ReadFile(extPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(raw), "\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		if strings.Contains(line, "MAINLINE_COMMAND_CWD") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if err := os.WriteFile(extPath, []byte(strings.Join(filtered, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := (Agent{}).InstallationStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Installed || !st.NeedsRepair || !strings.Contains(strings.Join(st.RepairReasons, "\n"), "command cwd") {
+		t.Fatalf("expected legacy local-dev extension to need repair: %#v", st)
 	}
 }
 

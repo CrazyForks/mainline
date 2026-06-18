@@ -19,7 +19,16 @@ const (
 	extensionFileName  = "mainline.ts"
 	managedMarker      = "mainline-managed-pi-extension"
 	commandModeVarName = "MAINLINE_COMMAND_MODE"
+	commandCwdVarName  = "MAINLINE_COMMAND_CWD"
 )
+
+var piEventNames = []string{
+	"session_start",
+	"before_agent_start",
+	"agent_end",
+	"session_before_compact",
+	"session_shutdown",
+}
 
 //go:embed templates/mainline.ts.tmpl
 var extensionTemplateSource string
@@ -34,7 +43,7 @@ func (Agent) Install(repoRoot string, opts hooks.InstallOptions) (hooks.InstallR
 		CommandMode:     hooks.InstallCommandMode(opts),
 	}
 	extensionPath := extensionPath(repoRoot)
-	desired, err := extensionSource(opts)
+	desired, err := extensionSource(repoRoot, opts)
 	if err != nil {
 		return report, err
 	}
@@ -124,10 +133,15 @@ func (Agent) InstallationStatus(repoRoot string) (hooks.InstallationStatus, erro
 	}
 	st.Installed = true
 	st.RestartRequired = true
-	st.HookCount = st.ExpectedHookCount
+	st.HookCount = countPiEventRegistrations(text, &st)
 	st.CommandMode = extensionCommandMode(text)
 	if st.CommandMode == "" || st.CommandMode == hooks.CommandModeUnknown {
 		st.RepairReasons = append(st.RepairReasons, "could not determine Pi extension command mode")
+	}
+	if st.CommandMode == hooks.CommandModeLocalDev {
+		if cwd, ok := extensionCommandCWD(text); !ok || cwd == "" {
+			st.RepairReasons = append(st.RepairReasons, "local-dev Pi extension is missing Mainline repo command cwd")
+		}
 	}
 	if reason := hooks.RuntimeRepairReason(st.CommandMode); reason != "" {
 		st.RepairReasons = append(st.RepairReasons, reason)
@@ -167,18 +181,57 @@ func extensionCommandMode(text string) string {
 	}
 }
 
-func extensionSource(opts hooks.InstallOptions) (string, error) {
+func extensionCommandCWD(text string) (string, bool) {
+	needle := "const " + commandCwdVarName + ": string | undefined = "
+	idx := strings.Index(text, needle)
+	if idx < 0 {
+		return "", false
+	}
+	rest := text[idx+len(needle):]
+	end := strings.Index(rest, ";")
+	if end < 0 {
+		return "", false
+	}
+	value := strings.TrimSpace(rest[:end])
+	if value == "undefined" {
+		return "", true
+	}
+	unquoted, err := strconv.Unquote(value)
+	if err != nil {
+		return "", false
+	}
+	return unquoted, true
+}
+
+func countPiEventRegistrations(text string, st *hooks.InstallationStatus) int {
+	total := 0
+	for _, eventName := range piEventNames {
+		count := strings.Count(text, `pi.on("`+eventName+`"`)
+		total += count
+		switch {
+		case count == 0:
+			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("missing Pi event registration for %s", eventName))
+		case count > 1:
+			st.RepairReasons = append(st.RepairReasons, fmt.Sprintf("duplicate Pi event registration for %s", eventName))
+		}
+	}
+	return total
+}
+
+func extensionSource(repoRoot string, opts hooks.InstallOptions) (string, error) {
 	command, argsPrefix := piInvocation(opts)
 	data := struct {
 		ManagedMarker string
 		CommandMode   string
 		Command       string
 		ArgsPrefix    string
+		CommandCwd    string
 	}{
 		ManagedMarker: managedMarker,
 		CommandMode:   quoteTS(hooks.InstallCommandMode(opts)),
 		Command:       quoteTS(command),
 		ArgsPrefix:    quoteTSArray(argsPrefix),
+		CommandCwd:    quoteOptionalTS(localDevCommandCWD(repoRoot, opts)),
 	}
 	var out bytes.Buffer
 	if err := extensionTemplate.Execute(&out, data); err != nil {
@@ -198,8 +251,26 @@ func piInvocation(opts hooks.InstallOptions) (string, []string) {
 	}
 }
 
+func localDevCommandCWD(repoRoot string, opts hooks.InstallOptions) string {
+	if opts.BinPath != "" || !opts.LocalDev {
+		return ""
+	}
+	abs, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return repoRoot
+	}
+	return abs
+}
+
 func quoteTS(s string) string {
 	return strconv.Quote(s)
+}
+
+func quoteOptionalTS(s string) string {
+	if s == "" {
+		return "undefined"
+	}
+	return quoteTS(s)
 }
 
 func quoteTSArray(values []string) string {
