@@ -9,94 +9,104 @@
 - 详细文档：[docs/reference.zh.md](./docs/reference.zh.md)
 - English version: [README.md](./README.md)
 
-**代码 review 还不够，AI 时代要先 review 意图。**
+**AI 时代的 Git。**
 
-Mainline 是一个面向 coding agent 的 Git-native memory layer。它在 diff 出现
-前，把这个 repo 的历史决策、约束、废弃方案、验证记录和正在推进的相关工作交给
-agent 和 reviewer。
+Mainline 让 Agent 自动把开发者的意图和决策随着代码一起保存到 Git 仓库。
 
-AI agent 让代码变得很便宜，也让 review 变得更难。Mainline 让意图先变得可
-review，再让代码进入 review。
+代码的历史已经由 Git 保存。Mainline 做的是把 Agent 每一次重要工程判断也放进
+同一个协作底座：原始目标、思考路径、关键决策、取舍、验证、明确约束、已经放弃
+的路线，以及这次判断最终对应哪个 commit。
 
-先 review 意图，再 review 代码。
+团队不需要保存一堆 AI 对话，也不需要发明单独的共享记忆服务。Agent 从 Git 里
+读取历史判断，完成工作后再把新的判断写回 Git。
 
 <img width="1600" alt="Mainline Hub 展示一条 sealed engineering intent" src="https://github.com/user-attachments/assets/71bd98d0-64db-4f41-86eb-342dbafbdfc3" />
 
-## 问题是什么
+## 为什么需要它
 
-过去做 code review，diff 往往还不算太大。人写代码慢，reviewer 可以从改动里
-慢慢反推作者意图。
+Agent 写代码很快，但只看代码，很容易看不到历史。Mainline 不是另一个给人维护的知识库，而是 Agent 像用 Git 一样自动读写的工具。
 
-Agent 改变了这件事。
+### 不再重复已经放弃的路线
 
-它可以很快生成一大段 diff。真正难 review 的，反而不是某一行代码，而是更前面
-的几个问题：
+已经尝试并最终放弃的方案，往往不会体现在代码里。
 
-- 这次到底是不是在解决正确的问题；
-- agent 有没有理解历史决策；
-- 它是不是重复了早就废弃的方案；
-- 它有没有漏掉 reviewer 之前强调过的约束；
-- 旁边是不是还有另一个 agent 在做相关工作；
-- 它的验证方式，是否真的对应这次变更的原因。
+比如团队试过用 Redis queue 处理 billing events，后来因为 replication lag 导致重复
+扣费而放弃。下一个 Agent grep 到半成品 TODO 时，很可能觉得“补完就好”。Mainline
+会在它动手前告诉它：这条路以前走过，坑在哪里，为什么不能继续补。
 
-如果 reviewer 只看到最后的 diff，就只能在代码里猜意图。猜对了还好，猜错了，
-问题就会被 merge 进 repo。
+### 在 Git conflicts 之前发现逻辑冲突
 
-### 一个更现实的故障
+Git 能发现同一行代码冲突，但发现不了两个 Agent 正在改同一块产品逻辑。
 
-一个普通 SaaS 后台。账单导出迁到了新的 `/exports/invoices` API，但老的
-`/reports/invoices.csv` 还不能删。
+如果别人的 Agent 已经开始调整某个计费规则，虽然还没提 PR，但已经产生了 intent，
+其他 Agent 在 preflight 阶段就能看到这件事。冲突不必等到 merge 或 review 才暴露，
+一开始就可以换路径、拆边界，或者先对齐。
 
-原因不复杂：三个企业客户的财务系统，还在每天凌晨拉这个 CSV 做自动对账。
-迁移窗口排在下个季度。前端埋点看不到，普通用户也点不到，代码里只剩一段
-compatibility branch。
+### 编辑前先读禁区和约束
 
-三周后，agent 接到任务：清理 legacy reporting code。它扫了一圈：新 UI 都走
-新 API，老 route 没什么产品流量，测试也不覆盖那几个客户的凌晨任务。
+有些代码看起来很奇怪，注释也不完整，但背后有真实约束。
 
-于是它删了。单测通过，dashboard 正常。第二天早上，客户财务对账全断。
+比如某段 auth middleware 保留了历史兼容逻辑，之前删过一次，结果 rollback。Mainline
+会把上次 rollback 的原因、模块约束和相关 intent 放到 Agent 眼前，让它先理解这块代码
+为什么不能随便动。
 
-关键事实不在 diff 里：**企业客户迁移完成前，不能删除 legacy CSV invoice
-export**。
+### Review 背后意图
 
-## Mainline 做什么
+Reviewer 看到的不只是代码 diff，而是实现者的原始目标，思考路径、关键决策。
 
-Mainline 记录一次工程工作的 intent，并在下一个危险改动前把它拿出来。
+Review 不再只是在 diff 里猜“它为什么这么写”，而是先看 intent，再验证实现是否真的
+符合 intent。代码审查会更早讨论方向、风险和取舍，而不是只在最后挑语法和边界条件。
 
-一条 intent 会说明：
+## Git 原生工作流
 
-- 用户真正要解决的问题；
-- 这次工作为什么存在；
-- 做了哪些决策；
-- 放弃了哪些方案；
-- 验证过什么；
-- 哪些 constraints、risks、follow-ups 要留给未来；
-- 涉及哪些文件和子系统；
-- 有没有相邻的 in-flight work；
-- 最后是哪一个 commit 把这件事带进了 `main`。
+Mainline 的存储和协作方式跟 Git 对齐。
 
-Mainline 不是 Git 替代品，不是 PR 系统，不是 session recorder，不是 RAG index，
-也不是个人产能 dashboard。它是跟着代码一起走的 repo-local engineering memory，
-存在 Git refs 和 Git notes 里。用 `mainline log`、`mainline show <id>` 或
-`mainline hub open` 阅读这些记忆。
+| 能力 | Mainline 怎么做 |
+|---|---|
+| 数据存储于 Git repo | intent event log 存在 Git refs，commit pin 存在 Git notes |
+| Git 原生工作流 | fetch、branch、merge、fork 都能带着 intent 走 |
+| Agent 全自动读写 | hooks、skill 和 CLI 让 Agent 自己读历史、写判断、封存 intent |
+| 不绑某个 vendor | Codex、Claude Code、Cursor、Pi、Copilot 或内部 Agent 都可以按同一份 repo 事实工作 |
+| 不改变原有流程 | 你仍然用平常的编辑器、Agent、GitHub / GitLab PR 和 CI |
 
-## 为什么不是加注释就够了
+Mainline 不是把 Git 替掉。它把 Agent 需要继承的工程判断放回 Git。
 
-好的注释当然要写。局部 invariant、边界条件、奇怪实现，都应该写清楚。
+## Agent 怎么使用 Mainline
 
-但注释很难承担 repo-level intent：
+Mainline 主要由 Agent 自己操作。开发者在首次安装之后不需要任何额外操作/命令，也不会影响原有的 AI coding 工作流。
 
-- agent 可能还没打开那个文件，就已经定了改动计划；
-- 决策可能跨服务、跨发布步骤、跨客户迁移窗口；
-- 被放弃的方案，往往已经不在当前代码里；
-- 注释很难告诉你另一个 agent 正在做什么；
-- 注释过期以后，很难看出它是否仍然有效；
-- reviewer 需要在看 diff 前看到意图，而不是在 diff 里猜意图。
+它靠三层机制接入现有 AI coding 工作流：
 
-Mainline 不赌下一次 agent 一定会读到正确注释。它把这些事实变成可检索、可
-review、可协作的 intent layer。
+- **Agent hooks**：会话开始时自动同步 repo intent，注入当前状态；
+- **Mainline skill**：告诉 Agent 什么时候读历史、什么时候记录判断、什么时候停下来；
+- **CLI**：提供可审计的读写命令，比如 `preflight`、`start`、`append`、`seal`。
 
-## 安装
+如果某个 Agent 暂时没有 hook 集成，也可以通过 skill 和 CLI 自然使用 Mainline。
+核心原则不变：改代码前先读 Git 里的历史判断，完成工作后再把新的判断写回 Git。
+
+## 完整闭环
+
+一次典型 Agent 工作会长这样：
+
+```bash
+mainline preflight --json
+mainline start "清理旧导出逻辑" --json
+mainline append "确认 legacy CSV 仍被企业客户凌晨对账使用，保留兼容 route" --json
+mainline seal --prepare --json > .ml-cache/seal.json
+mainline seal --submit --json < .ml-cache/seal.json
+```
+
+这几步分别对应：
+
+1. **获取上下文**：Agent 先看当前分支、历史 intent、协作风险和相关约束。
+2. **执行任务**：照常读代码、改代码、跑验证、处理 reviewer 反馈。
+3. **记录转向**：遇到关键决策、放弃路线、风险变化或验证结果时，用 `append` 留下判断。
+4. **密封决策记录**：`seal` 把这次工作整理成可 review、可同步、可被未来 Agent 检索的 intent。
+5. **随 Git 流转**：intent 通过 Git refs 和 notes 跟着 fetch、branch、merge 一起进入团队协作。
+
+未来的 Agent 不是从一段旧对话里找线索，而是从 repo 自己携带的历史判断里继承上下文。
+
+## 快速开始
 
 安装 CLI：
 
@@ -114,8 +124,6 @@ go install github.com/mainline-org/mainline@latest
 预编译 archive 和 checksums 在
 [GitHub Releases](https://github.com/mainline-org/mainline/releases/latest)。
 
-## 让 Agent 用起来
-
 每个 repo 初始化一次：
 
 ```bash
@@ -123,98 +131,42 @@ cd your-repo
 mainline init --actor-name "alice"
 ```
 
-`mainline init` 会写入 repo-local Mainline 状态，配置需要的 Git refs，安装
-Mainline skill，并给 Codex、Claude Code、Cursor、Pi 等支持的 agent 安装 hooks。
-对新初始化的 repo 来说，这一步已经足够创建 Pi 的 repo-local 扩展
-`.pi/extensions/mainline.ts`。
+`mainline init` 会：
 
-Hooks 会在 session start 跑 `mainline sync` 和 `mainline status`，让 agent 一
-开始就拿到新鲜的 repo 状态。但 hooks 不替 agent 做语义判断。什么时候读
-context、什么时候 append、怎么 seal、是否有 conflict，仍然由 agent 按 Mainline
-skill workflow 执行。
+- 写入 repo-local Mainline 配置；
+- 配置需要的 Git refs 和 notes；
+- 安装 Mainline skill；
+- 为 Codex、Claude Code、Cursor、Pi 等支持的 Agent 安装 repo-local hooks；
+- 把当前 `main` HEAD 记为已有项目的 coverage baseline。
 
-Skill 和 hook 是互补关系：skill 教 agent 走 Mainline workflow，hook 只把新鲜的
-repo 状态注入这个 workflow。Pi 只装共享 skill 时仍然可以自然使用 Mainline；没装
-hook 时只是少了 session start 和每轮 prompt 的自动上下文注入。
-
-如果某个 repo 在 Mainline binary 支持 Pi hooks 之前就已经初始化过，需要重新安装
-hooks 来补上新的 Pi 集成：
+如果一个 repo 是在某个 Agent hook 支持之前初始化的，可以补装 hooks：
 
 ```bash
-mainline hooks install --agent pi
-# 或重新安装所有支持的 hook 集成
 mainline hooks install
+# 或只补某个 Agent
+mainline hooks install --agent pi
 ```
 
-Pi 只会在项目被信任后加载 project-local extensions。安装 Pi hooks 后，需要 trust
-当前项目并 reload/restart Pi 会话，扩展才会生效。
-
-已有项目接入时，`mainline init` 会把当前 `main` HEAD 当作 coverage baseline。
-更早的历史默认 skipped；之后的新 commit 应该有 intent coverage。
-
-## Agent 跑什么
-
-非平凡工作时，agent-facing loop 是：
+全局 skill 需要更新时，使用 `skills` CLI：
 
 ```bash
-mainline context --current --json
-mainline start "<用户的目标>"
-mainline append "<有意义的进展>"
-mainline seal --prepare --json > .ml-cache/seal.json
-mainline seal --submit --json < .ml-cache/seal.json
+npx --yes skills add mainline-org/mainline --skill mainline --agent codex claude-code cursor pi --global --yes
 ```
 
-`context` 是 pre-edit gate。只读诊断或只给方案的工作可以停在只读检查后；在任务
-进入非平凡编辑或其他需要持久记录的工程工作前，不应该跑 `start`。之后 `start`
-才认领这一单工作。`append` 记录有工程意义的 turn：决策、pivot、完成的 slice，
-或会改变信心的 validation。`seal` 把这次工作变成可 review 的 intent：summary、
-decisions、rejected alternatives、validation notes 和 semantic fingerprint。
+## 人类常用命令
 
-架构调整、重构、迁移、删除、auth/billing/permissions/data-model、release/CI，
-以及“这个能不能删？”、“以前试过吗？”这类问题，都应该先跑 Mainline。
-
-Typo、纯格式化、一行明显语法修复，通常不用。
-
-## 工作流位置
-
-Mainline 不替换你的 Git 流程，它贴在旁边：
-
-1. **改代码前**，agent 用 `mainline context` 读取相关 intent。
-2. **工作过程中**，agent 用 `start` 和 `append` 记录有意义的 turn。
-3. **review 前**，agent 用 `seal` 写下 decisions、validation notes 和 semantic fingerprint。
-4. **review 时**，人类先看 intent 和协作面，再看或同时看 code diff。
-5. **merge 后**，`mainline sync` 把 main 上的 commit 和 intent 绑定起来。
-6. **下一次改动前**，未来 agent 先读到这段历史。
-
-重点不是多一套仪式。重点是团队 review 的不只是“生成出来的代码”，而是“这件事
-到底该不该这样做”。
-
-## CLI 和 Hub
-
-Mainline 有两个入口：
-
-- **CLI 做动作：** 初始化 repo、sync 状态、记录 intent、查看历史、发现 gaps、
-  生成 review material。
-- **Hub 用来阅读：** 浏览 intent history、pending work、文件级上下文、coverage
-  gaps、risks 和协作信号。
-
-已经有至少一条 intent 后，打开 Hub：
-
-```bash
-mainline hub open
-```
-
-人类常用命令：
+日常大多数命令会由 Agent 跑。人类通常只需要读状态、看 intent、打开 Hub。
 
 ```bash
 mainline status --actionable
 mainline log
 mainline show <intent_id>
 mainline gaps
+mainline hub open
 ```
 
-`mainline hub open` 最适合在 agent 已经产生至少一条 intent 之后打开。新仓库刚
-初始化时，Hub 里当然没什么内容；先让 agent 跑完一轮 intent，再打开 Hub 看记录。
+打开 Hub 后，可以浏览 intent history、pending work、文件级上下文、coverage gaps、
+risks 和协作信号。
 
 静态导出：
 
@@ -222,43 +174,44 @@ mainline gaps
 mainline hub export ./mainline-hub
 ```
 
-如果 fork contributor 也在本地使用 Mainline，优先由 upstream maintainer 显式
-接受他的 actor log：
+公开 Hosted Hub 入口是：https://mainline.sh/hub/
 
-```bash
-mainline actor import --actor actor_jiangge --remote jiangge
-```
+安装变体、恢复规则、hooks 行为、webhooks、配置、静态 Hub 发布、存储布局和开发命令，
+放在 [docs/reference.zh.md](./docs/reference.zh.md)。
 
-这个命令会从 fork 拉取 `refs/mainline/actors/<actor>/log`，校验事件属于指定
-actor，接受进 upstream actor namespace，并 best-effort 拉取 sealed intent 里引用的
-fork branch 到 `refs/mainline/imports/<actor>/branches/*`。这样即使 PR 是
-squash/rebase merge，upstream 仍能拿到 contributor 原始 code commit/tree object，
-再用正常 auto-pin 把 author-sealed intent pin 到 upstream merge commit。Hub 会显示
-`accepted_actor_log`、接受者、verified 状态和导入的 code refs。
-import 路径要求至少有一条作者 sealed intent；fork 侧的 constraints、risks、
-follow-ups、check judgments 或 merge acknowledgements 不会被导入成 upstream
-团队信号。merged evidence 仍以 upstream pin notes 为准。
+## 团队协作
 
-upstream repo 可以安装 `.github/workflows/mainline-fork-pr-import.yml`，在 fork PR
-merge 后自动跑这条 import。这个 action 使用 upstream 的 `pull_request_target`
-token，只 checkout 受信任的 upstream 代码，发现 fork 里已发布的 actor log，并且只在
-匹配唯一时导入；重复运行和 maintainer 手动 `actor import` 是幂等的。
+Mainline 的多人协作能力来自 Git。
 
-fork PR 在 contributor 没有 upstream 可见 Mainline actor log 时，才作为
-imported external contribution fallback 显示：
+同事、分支、fork、CI、另一个 Agent，只要能拿到同一个 repo，就能拿到同一份 intent
+历史。团队成员不需要去问“昨天那个 Agent 为什么这么改”，也不需要翻某个人本地的
+聊天记录。
 
-```bash
-mainline hub export ./mainline-hub --external-contributions fork-prs.json
-```
+典型协作方式：
 
-这类记录会标明 `github_pr_imported`、`not author-sealed` 等 provenance /
-trust boundary。Hub 不会把 GitHub PR metadata，或 PR body 里空的
-`## Mainline Intent` 模板，当成 contributor 自己 sealed 的 Mainline intent。
+- 新人先看 `mainline log` 和 Hub，快速理解最近项目判断；
+- Reviewer 先读 intent，再看 diff；
+- Agent 在 preflight 阶段发现相邻 intent，避免一开始就写出冲突方案；
+- fork contributor 可以发布自己的 actor log，由 upstream maintainer 显式接受；
+- merge 后，commit 和 intent 会被 pin 到一起，成为下一轮工作的历史上下文。
 
-Mainline 的公开 Hosted Hub 入口是：https://mainline.sh/hub/
-
-安装变体、恢复规则、hooks 行为、webhooks、配置、静态 Hub 发布、存储布局和开发命令，放在
+外部贡献者、fork PR、actor log import 等细节见
 [docs/reference.zh.md](./docs/reference.zh.md)。
+
+## 什么时候用
+
+非微小 Agent 工作前，建议使用 Mainline：
+
+- 架构调整；
+- 重构和迁移；
+- 删除代码；
+- auth、billing、permissions、data model；
+- release / CI；
+- “这个能不能删？”；
+- “以前是不是试过这条路？”；
+- 任何可能和另一个 Agent 或队友相邻的工作。
+
+Typo、纯格式化、一行明显语法修复，通常不用。
 
 ## 有效果吗
 
@@ -274,26 +227,13 @@ Mainline 的公开 Hosted Hub 入口是：https://mainline.sh/hub/
 
 完整方法论和限制条件见 [docs/eval-results.zh.md](./docs/eval-results.zh.md)。
 
-## 什么时候用
-
-非平凡 agent 工作前使用 Mainline：
-
-- 架构调整；
-- 重构和迁移；
-- 删除代码；
-- auth、billing、permissions、data model；
-- release / CI；
-- “这个能不能删？”、“以前试过吗？”；
-- 任何可能和另一个 agent 或队友相邻的工作。
-
-Typo、纯格式化、一行明显语法修复，通常不用。
-
 ## 继续阅读
 
 - 详细参考：[docs/reference.zh.md](./docs/reference.zh.md)
 - Eval 报告：[docs/eval-results.zh.md](./docs/eval-results.zh.md)
 - Intent Record Spec：[docs/specs/intent-record-v0.md](./docs/specs/intent-record-v0.md)
 - Agent Context Protocol：[docs/specs/agent-context-protocol-v0.md](./docs/specs/agent-context-protocol-v0.md)
+- Agent Autonomy Stop Lines：[docs/specs/agent-autonomy-stop-lines-v0.md](./docs/specs/agent-autonomy-stop-lines-v0.md)
 - 贡献指南：[CONTRIBUTING.md](./CONTRIBUTING.md)
 - 安全：[SECURITY.md](./SECURITY.md)
 - Changelog：[CHANGELOG.md](./CHANGELOG.md)
@@ -307,8 +247,16 @@ make test
 make lint
 ```
 
-核心子系统有 property-based tests。快速 PR gate 是 `make quick-test`；更完整
-的 PBT 说明在 [docs/reference.zh.md](./docs/reference.zh.md#开发和测试)。
+核心子系统有 property-based tests。快速 PR gate 是 `make quick-test`；更完整的 PBT
+说明在 [docs/reference.zh.md](./docs/reference.zh.md#开发和测试)。
+
+## 项目状态
+
+Mainline 处于 public alpha。CLI、skill、hooks、Hub、Git refs / notes 存储模型已经
+可用，但 schema、agent workflow guidance 和 Hosted Hub 体验仍会继续打磨。
+
+Mainline 适合那些已经把 Agent 用进真实工程流程、但开始担心上下文断掉的团队，期待
+您的反馈。
 
 ## 授权
 
