@@ -80,7 +80,7 @@ mainline init --actor-name "<你的名字>"
 
 1. 写入 `.mainline/config.toml` 并配置 Git refspecs。
 2. 安装 Mainline skill，也就是 agent 的完整 workflow 手册。
-3. 安装 Cursor、Claude Code、Codex 等支持的 repo-local hooks。
+3. 安装 Cursor、Claude Code、Codex、Pi 等支持的 repo-local hooks。
 
 `init` 新创建的 hook 配置文件会通过 `.git/info/exclude` 保持为当前 clone
 本地文件，不进入初始 setup commit。如果仓库原本已经 track 某个 agent hook
@@ -413,18 +413,22 @@ snapshot 注入 agent context。它不决定什么时候 start、append、seal �
 ```bash
 mainline hooks list-agents
 mainline hooks install --agent cursor
+mainline hooks install --agent pi
 mainline hooks install --local-dev
 mainline hooks install --bin ./mainline
 mainline hooks status
 mainline hooks uninstall --agent cursor
+mainline hooks uninstall --agent pi
 mainline hooks disable
 mainline hooks enable
 ```
 
+Pi 集成会写入 project-local `.pi/extensions/mainline.ts` 扩展。Pi 只会在项目被信任后加载 project-local extensions，所以安装后需要 trust/restart 当前项目会话。
+
 | Hook event | Mainline action |
 |---|---|
 | `session_start` | 跑 `mainline sync` 和 `mainline status`，并注入 agent context。 |
-| `before_submit_prompt`、`stop`、`subagent_stop`、`session_end` | 只做 webhook fan-out；dispatcher 不碰 engine。 |
+| `user_prompt_submit` / `before_submit_prompt`、`stop`、`subagent_stop`、`pre_compact`、`session_end` | 只做 webhook fan-out；dispatcher 不碰 engine。 |
 
 开关在 `.mainline/config.toml` 的 `[hooks]` 下。
 

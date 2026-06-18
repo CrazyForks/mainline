@@ -124,7 +124,7 @@ mainline init --actor-name "alice"
 ```
 
 `mainline init` 会写入 repo-local Mainline 状态，配置需要的 Git refs，安装
-Mainline skill，并给 Codex、Claude Code、Cursor 等支持的 agent 安装 hooks。
+Mainline skill，并给 Codex、Claude Code、Cursor、Pi 等支持的 agent 安装 hooks。
 
 Hooks 会在 session start 跑 `mainline sync` 和 `mainline status`，让 agent 一
 开始就拿到新鲜的 repo 状态。但 hooks 不替 agent 做语义判断。什么时候读

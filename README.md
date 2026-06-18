@@ -122,7 +122,7 @@ mainline init --actor-name "alice"
 
 `mainline init` sets up repo-local Mainline state, configures the Git refs
 Mainline needs, installs the Mainline skill, and installs hooks for supported
-agents such as Codex, Claude Code, and Cursor.
+agents such as Codex, Claude Code, Cursor, and Pi.
 
 Hooks run `mainline sync` and `mainline status` at session start so the agent
 begins with fresh repo state. The hooks do not decide what to do. The agent

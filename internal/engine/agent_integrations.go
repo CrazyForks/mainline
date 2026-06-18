@@ -14,6 +14,7 @@ import (
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/claudecode"
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/codex"
 	_ "github.com/mainline-org/mainline/internal/hooks/agents/cursor"
+	_ "github.com/mainline-org/mainline/internal/hooks/agents/pi"
 )
 
 type InitOptions struct {
@@ -122,6 +123,7 @@ func existingGlobalMainlineSkill() (string, bool) {
 		filepath.Join(home, ".agents", "skills", "mainline", "SKILL.md"),
 		filepath.Join(home, ".agent", "skills", "mainline", "SKILL.md"),
 		filepath.Join(home, ".claude", "skills", "mainline", "SKILL.md"),
+		filepath.Join(home, ".pi", "agent", "skills", "mainline", "SKILL.md"),
 	}
 	for _, path := range candidates {
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
