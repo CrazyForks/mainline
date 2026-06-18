@@ -327,7 +327,7 @@ func wrapperCommand(opts hooks.InstallOptions, hookID string) string {
 		return fmt.Sprintf(`sh -c 'test -x %q && exec %q hooks cursor %s || exit 0'`,
 			opts.BinPath, opts.BinPath, hookID)
 	case opts.LocalDev:
-		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/mainline-go-build}" && exec go run . hooks cursor %s || exit 0'`, hookID)
+		return fmt.Sprintf(`sh -c 'cd "$(git rev-parse --show-toplevel)" && export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/mainline-go-build}" && go run . hooks cursor %s || exit 0'`, hookID)
 	default:
 		return fmt.Sprintf(`sh -c 'command -v mainline >/dev/null 2>&1 && exec mainline hooks cursor %s || exit 0'`, hookID)
 	}

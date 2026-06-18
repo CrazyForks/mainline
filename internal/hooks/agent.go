@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -209,11 +210,70 @@ func RuntimeRepairReason(mode string) string {
 			return "path-mode hooks require `mainline` on PATH"
 		}
 	case CommandModeLocalDev:
-		if _, err := exec.LookPath("go"); err != nil {
+		goPath, err := exec.LookPath("go")
+		if err != nil {
 			return "local-dev hooks require `go` on PATH"
+		}
+		version := goRuntimeVersion(goPath)
+		if version != "" && !goVersionAtLeast(version, 1, 22) {
+			return fmt.Sprintf("local-dev hooks require Go 1.22+ on PATH (found %s); install Go 1.22+ first on PATH or reinstall hooks with --bin", version)
 		}
 	}
 	return ""
+}
+
+func goRuntimeVersion(goPath string) string {
+	out, err := exec.Command(goPath, "env", "GOVERSION").Output()
+	if err == nil {
+		return strings.TrimSpace(string(out))
+	}
+	out, err = exec.Command(goPath, "version").Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) >= 3 && fields[0] == "go" && fields[1] == "version" {
+		return fields[2]
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func goVersionAtLeast(version string, wantMajor, wantMinor int) bool {
+	major, minor, ok := parseGoMajorMinor(version)
+	if !ok {
+		// Unknown/devel versions should not make an otherwise installed hook
+		// look broken. The actual hook command remains fail-soft.
+		return true
+	}
+	if major != wantMajor {
+		return major > wantMajor
+	}
+	return minor >= wantMinor
+}
+
+func parseGoMajorMinor(version string) (int, int, bool) {
+	fields := strings.Fields(version)
+	if len(fields) >= 3 && fields[0] == "go" && fields[1] == "version" {
+		version = fields[2]
+	} else if len(fields) > 0 {
+		version = fields[0]
+	}
+	version = strings.TrimPrefix(version, "go")
+	parts := strings.FieldsFunc(version, func(r rune) bool {
+		return r < '0' || r > '9'
+	})
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 func isMainlineSourceRepo(repoRoot string) bool {
