@@ -11,6 +11,8 @@
 
 **AI 时代的 Git。**
 
+https://github.com/user-attachments/assets/8ceddc6b-e5b2-4a62-837f-2cfd6af955b6
+
 Mainline 让 Agent 自动把开发者的意图和决策随着代码一起保存到 Git 仓库。
 
 代码的历史已经由 Git 保存。Mainline 做的是把 Agent 每一次重要工程判断也放进

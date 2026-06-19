@@ -11,6 +11,8 @@
 
 **Git for the AI era.**
 
+https://github.com/user-attachments/assets/75826aba-0016-448c-b889-eb2dea83ca36
+
 Mainline lets agents save developer intent and decisions to Git alongside the
 code.
 
