@@ -22,8 +22,6 @@ Mainline 让 Agent 自动把开发者的意图和决策随着代码一起保存�
 团队不需要保存一堆 AI 对话，也不需要发明单独的共享记忆服务。Agent 从 Git 里
 读取历史判断，完成工作后再把新的判断写回 Git。
 
-<img width="1600" alt="Mainline Hub 展示一条 sealed engineering intent" src="https://github.com/user-attachments/assets/71bd98d0-64db-4f41-86eb-342dbafbdfc3" />
-
 ## 为什么需要它
 
 Agent 写代码很快，但只看代码，很容易看不到历史。Mainline 不是另一个给人维护的知识库，而是 Agent 像用 Git 一样自动读写的工具。
@@ -172,6 +170,8 @@ mainline hub open
 
 打开 Hub 后，可以浏览 intent history、pending work、文件级上下文、coverage gaps、
 risks 和协作信号。
+
+<img width="1600" alt="Mainline Hub 展示一条 sealed engineering intent" src="https://github.com/user-attachments/assets/71bd98d0-64db-4f41-86eb-342dbafbdfc3" />
 
 静态导出：
 
