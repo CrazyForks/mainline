@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mainline-org/mainline/internal/domain"
 	"github.com/mainline-org/mainline/internal/engine"
 )
 
@@ -24,7 +26,7 @@ var doctorCmd = &cobra.Command{
 	Long: `Default mode: scans local drafts for orphans (referencing missing
 git branches) and stale ones; --fix deletes orphans.
 
---setup mode: runs install / wiring sanity checks — verifies the git
+--setup mode: runs repository wiring sanity checks — verifies the git
 remote refspec configuration, identity file, and .gitignore.
 Combined with --fix, missing remote refspec entries
 are rewired in place. Use this as the first step when 'mainline sync'
@@ -39,6 +41,19 @@ or force-pushes. It is read-only; use migrate notes for repairs.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		svc, err := getService()
 		if err != nil {
+			if doctorSetup {
+				var mlErr *domain.MainlineError
+				if errors.As(err, &mlErr) && mlErr.Code == domain.ErrNotInGitRepo {
+					outputError(domain.NewRecoverableError(
+						domain.ErrNotInGitRepo,
+						"doctor --setup must run inside a Git repository",
+						"`mainline version` verifies that the CLI is installed",
+						"`cd <repo>` to an existing Git repository, or run `git init` first",
+						"then run `mainline init --actor-name \"<your name>\"` before `mainline doctor --setup`",
+					))
+					return
+				}
+			}
 			outputError(err)
 			return
 		}
@@ -251,7 +266,7 @@ func renderSetupReport(r *engine.DoctorSetupReport, fixed bool) {
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "delete orphan local draft files (default mode), or rewire refspecs (with --setup)")
 	doctorCmd.Flags().DurationVar(&doctorStaleAfter, "stale-after", 24*time.Hour, "mark drafting intents stale after this duration")
-	doctorCmd.Flags().BoolVar(&doctorSetup, "setup", false, "run install / wiring sanity checks (refspec, identity, .gitignore)")
+	doctorCmd.Flags().BoolVar(&doctorSetup, "setup", false, "run repository wiring sanity checks (refspec, identity, .gitignore)")
 	doctorCmd.Flags().BoolVar(&doctorProposals, "proposals", false, "diagnose proposed intents that may need cleanup")
 	doctorCmd.Flags().DurationVar(&doctorStaleProposedAfter, "stale-proposed-after", engine.DefaultStaleProposedAfter, "mark proposed intents suspicious after this duration")
 	doctorCmd.Flags().BoolVar(&doctorNotes, "notes", false, "diagnose git-notes rewrite drift after history rewrites")

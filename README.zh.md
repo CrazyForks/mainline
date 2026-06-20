@@ -114,7 +114,7 @@ mainline seal --submit --json < .ml-cache/seal.json
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
-mainline doctor --setup
+mainline version
 ```
 
 也可以用 Go 安装：
@@ -125,6 +125,9 @@ go install github.com/mainline-org/mainline@latest
 
 预编译 archive 和 checksums 在
 [GitHub Releases](https://github.com/mainline-org/mainline/releases/latest)。
+
+`mainline version` 只验证 CLI 已安装并且在 `PATH` 中。`mainline doctor --setup`
+是每个 repo 内的配置检查，需要在 Git 仓库里运行。
 
 每个 repo 初始化一次：
 

@@ -135,7 +135,7 @@ Install the CLI:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mainline-org/mainline/main/install.sh | bash
-mainline doctor --setup
+mainline version
 ```
 
 You can also install with Go:
@@ -146,6 +146,10 @@ go install github.com/mainline-org/mainline@latest
 
 Downloadable release archives and checksums are published on
 [GitHub Releases](https://github.com/mainline-org/mainline/releases/latest).
+
+`mainline version` only verifies that the CLI is installed and on your `PATH`.
+`mainline doctor --setup` is a per-repository wiring check and expects to run
+inside a Git repository.
 
 Initialize each repo once:
 
