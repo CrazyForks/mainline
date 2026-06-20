@@ -25,10 +25,6 @@ Teams do not need to keep long AI transcripts around, and they do not need to
 invent a separate shared memory service. Agents read prior judgment from Git,
 do the work, and write the new judgment back to Git.
 
-<img width="2530" height="756" alt="Mainline overview" src="https://github.com/user-attachments/assets/e337559b-72cd-4fd4-b139-16754cc675f6" />
-
-<img width="1600" alt="Mainline Hub showing a sealed engineering intent" src="https://github.com/user-attachments/assets/2c740a17-019f-4f16-bd8a-e812d8a78f32" />
-
 ## Why It Matters
 
 Agents can move fast, but code alone does not carry the full history. Mainline
@@ -196,6 +192,8 @@ mainline hub open
 
 Hub lets you browse intent history, pending work, file-level context, coverage
 gaps, risks, and collaboration signals.
+
+<img width="1600" alt="Mainline Hub showing a sealed engineering intent" src="https://github.com/user-attachments/assets/2c740a17-019f-4f16-bd8a-e812d8a78f32" />
 
 For static export:
 
