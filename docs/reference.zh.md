@@ -62,10 +62,10 @@ cd mainline
 go build -o mainline .
 ```
 
-随时检查本机配置：
+用任意方式安装后，可以这样确认二进制已安装：
 
 ```bash
-mainline doctor --setup
+mainline version
 ```
 
 ## 让 Agent 用起来
@@ -74,6 +74,12 @@ mainline doctor --setup
 
 ```bash
 mainline init --actor-name "<你的名字>"
+```
+
+在这个 Git 仓库里检查仓库配置：
+
+```bash
+mainline doctor --setup
 ```
 
 `mainline init` 做三件事：
@@ -394,7 +400,7 @@ Reviewer / maintainer 额外命令：
 | `mainline followups add` | 添加 explicit deferred work。 |
 | `mainline check --prepare` | 准备 phase-2 conflict review task package。 |
 | `mainline check --submit` | 提交 phase-2 judgment。 |
-| `mainline doctor --setup` | 检查安装、refspecs、identity、`.gitignore` 和 policy state。 |
+| `mainline doctor --setup` | 检查仓库配置：refspecs、identity、`.gitignore` 和 policy state。 |
 | `mainline init --rewire` | 重新应用 refspec config、notes display refs 和 `.gitignore` 条目。 |
 
 所有命令都支持 `--json`。`--no-sync` 可以跳过 auto-sync wrapper。

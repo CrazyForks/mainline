@@ -68,10 +68,10 @@ cd mainline
 go build -o mainline .
 ```
 
-Verify setup at any time:
+Verify the installed binary after any install method:
 
 ```bash
-mainline doctor --setup
+mainline version
 ```
 
 ## Getting Started With An Agent
@@ -80,6 +80,12 @@ One-time setup per repository:
 
 ```bash
 mainline init --actor-name "<your name>"
+```
+
+Verify repository wiring from inside that Git repository:
+
+```bash
+mainline doctor --setup
 ```
 
 `mainline init` does three things:
@@ -435,7 +441,7 @@ Reviewer and maintainer extras:
 | `mainline followups add` | Add explicit deferred work. |
 | `mainline check --prepare` | Prepare a phase-2 conflict review task package. |
 | `mainline check --submit` | Submit phase-2 judgment. |
-| `mainline doctor --setup` | Verify installation, refspecs, identity, `.gitignore`, and optional policy state. |
+| `mainline doctor --setup` | Verify repository wiring: refspecs, identity, `.gitignore`, and optional policy state. |
 | `mainline init --rewire` | Re-apply refspec config, notes display refs, and `.gitignore` entries. |
 
 All commands accept `--json`. The persistent `--no-sync` flag opts a command out
