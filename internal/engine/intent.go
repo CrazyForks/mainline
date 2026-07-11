@@ -414,15 +414,25 @@ func (s *Service) Abandon(intentID string, reason string) (*AbandonResult, error
 	}
 
 	draft, err := s.Store.ReadDraft(intentID)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, domain.NewError(domain.ErrNoActiveIntent, fmt.Sprintf("intent %s not found", intentID))
 	}
 
-	effectiveStatus := draft.Status
+	iv := s.readIntentViewByID(intentID)
+	if draft == nil && (iv == nil || iv.Status == domain.StatusDrafting) {
+		return nil, domain.NewError(domain.ErrNoActiveIntent, fmt.Sprintf("intent %s not found", intentID))
+	}
+
+	var effectiveStatus domain.IntentStatus
 	// Sync/pin is the modern source of merged truth when it points at a new
 	// main commit. A no-op sealed intent can otherwise look merged because
 	// its code commit equals its base commit.
-	if iv := s.readIntentViewByID(intentID); viewTerminalStatusOverridesDraft(draft, iv) {
+	if draft != nil {
+		effectiveStatus = draft.Status
+		if viewTerminalStatusOverridesDraft(draft, iv) {
+			effectiveStatus = iv.Status
+		}
+	} else {
 		effectiveStatus = iv.Status
 	}
 
@@ -491,13 +501,15 @@ func (s *Service) Abandon(intentID string, reason string) (*AbandonResult, error
 		res.Warning = "No remote configured. Run `mainline publish` once you set one up."
 	}
 
-	// Update the local draft last so the file mirrors the event we
-	// just wrote — keeps `mainline status` and `show` in sync without
-	// waiting for a Sync round-trip.
-	draft.Status = domain.StatusAbandoned
-	draft.LastModifiedAt = core.Now()
-	if err := s.Store.WriteDraft(draft); err != nil {
-		return nil, fmt.Errorf("update draft: %w", err)
+	// Update an existing local draft last so the file mirrors the event we
+	// just wrote. A shared proposal remains actionable after its worktree-local
+	// cache is cleaned, and abandoning it must not manufacture a replacement.
+	if draft != nil {
+		draft.Status = domain.StatusAbandoned
+		draft.LastModifiedAt = core.Now()
+		if err := s.Store.WriteDraft(draft); err != nil {
+			return nil, fmt.Errorf("update draft: %w", err)
+		}
 	}
 
 	if err := s.refreshLocalViewIndexes(cfg); err != nil {
