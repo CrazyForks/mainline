@@ -288,7 +288,14 @@ func (s *Service) Pin() (*PinResult, error) {
 			continue
 		}
 
-		if len(iv.BackfillCommits) > 0 {
+		useBackfill := len(iv.BackfillCommits) > 0
+		if useBackfill && iv.Status == domain.StatusMerged && iv.StatusEvidence.MergedMainCommit != "" {
+			// Notes recovery may move merge evidence to a rewritten main commit
+			// while the immutable seal event still names old backfill commits.
+			// Do not resurrect notes on those stale commits.
+			useBackfill = false
+		}
+		if useBackfill {
 			pinnedAny := false
 			for _, target := range iv.BackfillCommits {
 				resolved := s.resolvePinCommit(target)
