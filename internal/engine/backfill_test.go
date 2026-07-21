@@ -224,3 +224,87 @@ func TestBackfill_PinIdempotentPastLookback(t *testing.T) {
 		}
 	}
 }
+
+func TestBackfill_MergedIntentDoesNotReviveRewrittenBackfillCommit(t *testing.T) {
+	dir, cleanup := testRepo(t)
+	defer cleanup()
+	svc := NewServiceFromRoot(dir)
+	if _, err := svc.Init("agent"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	gitCmd(t, dir, "checkout", "main")
+
+	initial := svc.Git.ReadRef("refs/heads/main")
+	writeFile(t, dir, "rewritten.go", "package main\n")
+	gitCmd(t, dir, "add", "rewritten.go")
+	gitCmd(t, dir, "commit", "-m", "old rewritten backfill target")
+	oldCommit := svc.Git.ReadRef("refs/heads/main")
+	gitCmd(t, dir, "branch", "old-main", oldCommit)
+
+	gitCmd(t, dir, "reset", "--hard", initial)
+	writeFile(t, dir, "rewritten.go", "package main\n")
+	gitCmd(t, dir, "add", "rewritten.go")
+	gitCmd(t, dir, "commit", "-m", "new rewritten backfill target")
+	newCommit := svc.Git.ReadRef("refs/heads/main")
+	if newCommit == oldCommit {
+		t.Fatal("test setup should create a rewritten commit")
+	}
+
+	intentID := "int_rewritten_backfill"
+	note := domain.CommitNote{
+		SchemaVersion: 1,
+		Kind:          "mainline.commit_note",
+		Intents: []domain.IntentReference{
+			{IntentID: intentID, SealResultHash: "sha256:test"},
+		},
+		AddedAt:       "2026-06-22T00:00:00Z",
+		AddedBy:       "actor_test",
+		Via:           "pin_auto",
+		MatchStrategy: "tree_hash",
+	}
+	if err := upsertCommitNote(svc.Git, newCommit, note); err != nil {
+		t.Fatalf("write new merge note: %v", err)
+	}
+
+	view := &domain.MainlineView{
+		SchemaVersion: 1,
+		MainBranch:    "main",
+		Intents: []domain.IntentView{
+			{
+				IntentID:        intentID,
+				SchemaVersion:   1,
+				Status:          domain.StatusMerged,
+				Goal:            "rewritten backfill intent",
+				CodeCommit:      oldCommit,
+				BackfillCommits: []string{oldCommit},
+				StatusEvidence: domain.StatusEvidence{
+					MergedMainCommit: newCommit,
+					MergedVia:        "pin_backfill",
+					EvidenceComplete: true,
+				},
+			},
+		},
+	}
+	if err := svc.Store.WriteMainlineView(view); err != nil {
+		t.Fatalf("write view: %v", err)
+	}
+	if raw, _ := svc.Git.NotesShow(oldCommit); raw != "" {
+		t.Fatalf("old commit should start without a note, got %q", raw)
+	}
+
+	pinResult, err := svc.Pin()
+	if err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	for _, link := range pinResult.Links {
+		if link.IntentID == intentID && link.Commit == oldCommit {
+			t.Fatalf("pin should not revive rewritten backfill commit, got %+v", pinResult.Links)
+		}
+	}
+	if raw, _ := svc.Git.NotesShow(oldCommit); raw != "" {
+		t.Fatalf("old commit note should stay absent, got %q", raw)
+	}
+	if raw, _ := svc.Git.NotesShow(newCommit); raw == "" {
+		t.Fatal("new merged commit note should stay present")
+	}
+}
