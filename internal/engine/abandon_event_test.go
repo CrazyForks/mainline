@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -88,6 +89,132 @@ func TestAbandonProposedWritesActorLogEvent(t *testing.T) {
 	}
 	if found.Status != domain.StatusAbandoned {
 		t.Fatalf("expected view status abandoned, got %s — likely the actor-log event was not written", found.Status)
+	}
+}
+
+func TestAbandonSharedLifecycleWithoutLocalDraftWritesActorLogEvent(t *testing.T) {
+	for _, sharedStatus := range []domain.IntentStatus{
+		domain.StatusProposed,
+		domain.StatusSealedLocal,
+	} {
+		t.Run(string(sharedStatus), func(t *testing.T) {
+			dir, cleanup := testRepo(t)
+			defer cleanup()
+			svc := NewServiceFromRoot(dir)
+			if _, err := svc.Init("agent"); err != nil {
+				t.Fatalf("init: %v", err)
+			}
+
+			gitCmd(t, dir, "checkout", "-b", "feature/missing-draft")
+			start, err := svc.Start("published worktree was cleaned", "")
+			if err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			writeFile(t, dir, "missing_draft.go", "package main\n")
+			gitCmd(t, dir, "add", "missing_draft.go")
+			gitCmd(t, dir, "commit", "-m", "missing-draft-target")
+			if _, err := svc.Append("seal before cleaning the worktree"); err != nil {
+				t.Fatalf("append: %v", err)
+			}
+
+			sr := validSealResult(start.IntentID)
+			data, _ := json.Marshal(sr)
+			if _, err := svc.SealSubmit(json.RawMessage(data)); err != nil {
+				t.Fatalf("seal: %v", err)
+			}
+			view, err := svc.Store.ReadMainlineView()
+			if err != nil {
+				t.Fatalf("read shared view: %v", err)
+			}
+			for i := range view.Intents {
+				if view.Intents[i].IntentID == start.IntentID {
+					view.Intents[i].Status = sharedStatus
+				}
+			}
+			if err := svc.Store.WriteMainlineView(view); err != nil {
+				t.Fatalf("write shared view: %v", err)
+			}
+			before := svc.readIntentViewByID(start.IntentID)
+			if before == nil || before.Status != sharedStatus {
+				t.Fatalf("expected shared %s view before draft cleanup, got %+v", sharedStatus, before)
+			}
+			if err := svc.Store.DeleteDraft(start.IntentID); err != nil {
+				t.Fatalf("delete local draft: %v", err)
+			}
+
+			res, err := svc.Abandon(start.IntentID, "superseded after worktree cleanup")
+			if err != nil {
+				t.Fatalf("abandon %s intent without local draft: %v", sharedStatus, err)
+			}
+			if res.PriorStatus != string(sharedStatus) {
+				t.Fatalf("expected PriorStatus=%s, got %s", sharedStatus, res.PriorStatus)
+			}
+			if res.EventID == "" {
+				t.Fatalf("expected abandon event for shared %s intent", sharedStatus)
+			}
+			if _, err := svc.Store.ReadDraft(start.IntentID); err == nil {
+				t.Fatal("abandon must not recreate a missing local draft")
+			}
+			after := svc.readIntentViewByID(start.IntentID)
+			if after == nil || after.Status != domain.StatusAbandoned {
+				t.Fatalf("expected shared view status abandoned, got %+v", after)
+			}
+		})
+	}
+}
+
+func TestAbandonWithoutLocalDraftRejectsUnavailableOrTerminalSharedState(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   domain.IntentStatus
+		wantCode domain.ErrorCode
+	}{
+		{name: "missing everywhere", wantCode: domain.ErrNoActiveIntent},
+		{name: "drafting is local only", status: domain.StatusDrafting, wantCode: domain.ErrNoActiveIntent},
+		{name: "merged", status: domain.StatusMerged, wantCode: domain.ErrInvalidStatus},
+		{name: "abandoned", status: domain.StatusAbandoned, wantCode: domain.ErrInvalidStatus},
+		{name: "superseded", status: domain.StatusSuperseded, wantCode: domain.ErrInvalidStatus},
+		{name: "reverted", status: domain.StatusReverted, wantCode: domain.ErrInvalidStatus},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, cleanup := testRepo(t)
+			defer cleanup()
+			svc := NewServiceFromRoot(dir)
+			initRes, err := svc.Init("agent")
+			if err != nil {
+				t.Fatalf("init: %v", err)
+			}
+			const intentID = "int_without_local_draft"
+			if tt.status != "" {
+				if err := svc.Store.WriteMainlineView(&domain.MainlineView{
+					SchemaVersion: 1,
+					Intents: []domain.IntentView{{
+						IntentID: intentID,
+						Status:   tt.status,
+					}},
+				}); err != nil {
+					t.Fatalf("write shared view: %v", err)
+				}
+			}
+
+			cfg, err := svc.getTeamConfig()
+			if err != nil {
+				t.Fatalf("team config: %v", err)
+			}
+			actorRef := svc.Store.ActorLogRef(initRes.ActorID, cfg.Mainline.ActorLogPrefix)
+			beforeRef := svc.Git.ReadRef(actorRef)
+
+			_, err = svc.Abandon(intentID, "must not mutate invalid state")
+			var mlErr *domain.MainlineError
+			if !errors.As(err, &mlErr) || mlErr.Code != tt.wantCode {
+				t.Fatalf("expected %s, got %v", tt.wantCode, err)
+			}
+			if afterRef := svc.Git.ReadRef(actorRef); afterRef != beforeRef {
+				t.Fatalf("actor log changed for rejected state: before=%s after=%s", beforeRef, afterRef)
+			}
+		})
 	}
 }
 
