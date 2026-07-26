@@ -42,6 +42,11 @@ func TestInstallWritesManagedExtensionAndIsIdempotent(t *testing.T) {
 		`debug("running " + hookName + " in " + commandCwd);`,
 		`debug("exited " + hookName + " with code " + code`,
 		`systemPromptAppend`,
+		`const HOOK_STDOUT_MAX_CHARS = 256 * 1024;`,
+		`const MAINLINE_CONTEXT_MAX_CHARS = 48 * 1024;`,
+		`hook context exceeded Pi safety budget`,
+		`combined hook context exceeded Pi safety budget`,
+		`stdout from " + hookName + " exceeded safety budget`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("extension missing %q:\n%s", want, text)
