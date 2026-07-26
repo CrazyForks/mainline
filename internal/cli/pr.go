@@ -13,6 +13,8 @@ var prDescIntentID string
 var prCommentBase string
 var prCommentHead string
 var prCommentBranch string
+var prCommentPRNumber int
+var prCommentForkURL string
 var prImportPRNumber int
 var prImportForkURL string
 var prImportHeadRef string
@@ -61,7 +63,13 @@ var prCommentCmd = &cobra.Command{
 			return
 		}
 
-		comment, err := svc.PRComment(prCommentBase, prCommentHead, prCommentBranch)
+		comment, err := svc.PRCommentWithOptions(engine.PullRequestCommentOptions{
+			Base:     prCommentBase,
+			Head:     prCommentHead,
+			Branch:   prCommentBranch,
+			PRNumber: prCommentPRNumber,
+			ForkURL:  prCommentForkURL,
+		})
 		if err != nil {
 			outputError(err)
 			return
@@ -128,6 +136,8 @@ func init() {
 	prCommentCmd.Flags().StringVar(&prCommentBase, "base", "", "base commit SHA for the PR range")
 	prCommentCmd.Flags().StringVar(&prCommentHead, "head", "", "head commit SHA for the PR range")
 	prCommentCmd.Flags().StringVar(&prCommentBranch, "branch", "", "PR head branch name fallback")
+	prCommentCmd.Flags().IntVar(&prCommentPRNumber, "pr", 0, "pull request number for temporary fork refs")
+	prCommentCmd.Flags().StringVar(&prCommentForkURL, "fork-url", "", "fork repository URL to read contributor intent metadata from")
 	prImportCmd.Flags().IntVar(&prImportPRNumber, "pr", 0, "pull request number for diagnostics")
 	prImportCmd.Flags().StringVar(&prImportForkURL, "fork-url", "", "fork repository URL to discover actor logs from")
 	prImportCmd.Flags().StringVar(&prImportHeadRef, "head-ref", "", "pull request head branch name")
