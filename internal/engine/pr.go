@@ -15,6 +15,14 @@ const (
 	prCommentMarker          = "<!-- mainline:pr-comment:v1 -->"
 )
 
+type PullRequestCommentOptions struct {
+	Base     string
+	Head     string
+	Branch   string
+	PRNumber int
+	ForkURL  string
+}
+
 func (s *Service) PRDescription(intentID string) (string, error) {
 	if err := s.requireInit(); err != nil {
 		return "", err
@@ -40,16 +48,35 @@ func (s *Service) PRDescription(intentID string) (string, error) {
 }
 
 func (s *Service) PRComment(base, head, branch string) (string, error) {
+	return s.PRCommentWithOptions(PullRequestCommentOptions{
+		Base:   base,
+		Head:   head,
+		Branch: branch,
+	})
+}
+
+func (s *Service) PRCommentWithOptions(opts PullRequestCommentOptions) (string, error) {
 	if err := s.requireInit(); err != nil {
 		return "", err
 	}
 
 	view, _ := s.Store.ReadMainlineView()
-	if view == nil {
+	if view == nil && strings.TrimSpace(opts.ForkURL) == "" {
 		return formatMissingPRComment("Mainline view is not available. Run `mainline sync` and retry."), nil
 	}
+	if view == nil {
+		view = &domain.MainlineView{SchemaVersion: 1}
+	}
 
-	matches := s.matchPRIntents(view, base, head, branch)
+	if strings.TrimSpace(opts.ForkURL) != "" {
+		forkIntents, err := s.readForkPRCommentIntents(strings.TrimSpace(opts.ForkURL), opts.PRNumber)
+		if err != nil {
+			return "", err
+		}
+		view.Intents = mergePRCommentIntents(view.Intents, forkIntents)
+	}
+
+	matches := s.matchPRIntents(view, opts.Base, opts.Head, opts.Branch)
 	if len(matches) == 0 {
 		return formatMissingPRComment("No sealed Mainline intent was found for this PR range."), nil
 	}
@@ -143,6 +170,9 @@ func formatPRIntent(iv domain.IntentView, level int) string {
 		sb.WriteString(fmt.Sprintf("**Status:** `%s`\n", iv.Status))
 	}
 	sb.WriteString(fmt.Sprintf("**Title:** %s\n\n", summary.Title))
+	if iv.Provenance != nil && iv.Provenance.Kind == forkPRCommentProvenanceKind {
+		sb.WriteString("> Contributor-published intent; not yet accepted into the upstream Mainline log.\n\n")
+	}
 
 	sb.WriteString(subheading + " What changed\n\n")
 	sb.WriteString(summary.What + "\n\n")

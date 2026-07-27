@@ -48,6 +48,18 @@ func TestPRImportCommandIsRegistered(t *testing.T) {
 	}
 }
 
+func TestPRCommentCommandSupportsForkMetadata(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"pr-comment"})
+	if err != nil || cmd.Name() != "pr-comment" {
+		t.Fatalf("pr-comment command missing: cmd=%v err=%v", cmd, err)
+	}
+	for _, name := range []string{"base", "head", "branch", "pr", "fork-url"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Fatalf("pr-comment missing --%s flag", name)
+		}
+	}
+}
+
 func TestPublishCommandHasForkRemoteFlag(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"publish"})
 	if err != nil || cmd.Name() != "publish" {
