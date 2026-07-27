@@ -38,6 +38,40 @@ and uses semver-style versions once tags are published.
 - _Template: intentionally accepted limitations, unstable schemas, incomplete
   integrations, or non-blocking risks relevant to this release._
 
+## [0.5.1] - 2026-07-27
+
+### Fixed
+
+- Mainline hook context injection is now bounded. The shared hook renderer
+  compacts status and proposal JSON semantically and enforces final byte
+  budgets (32 KiB for session-start context, 16 KiB for turn-start context);
+  oversized context is replaced with a compact warning that points to the
+  `mainline` commands carrying the full detail instead of flooding the agent
+  session.
+- The generated Pi extension now caps hook stdout at 256 KiB and combined
+  injected context at 48 KiB, so a pathological repository state can no longer
+  blow up Pi session memory or context windows through the Mainline hook.
+- Abandoning a shared proposal no longer fails with `NO_ACTIVE_INTENT` when the
+  local draft is missing: `mainline abandon` falls back to the shared intent
+  view so sealed/proposed intents can reach the abandoned terminal state after
+  worktree cleanup.
+- Syncing after a notes migration no longer resurrects backfill notes on
+  rewritten pre-migration commits: pinning a merged intent with recorded
+  mainline evidence now follows the merged-evidence path instead of replaying
+  stale `BackfillCommits` from the immutable seal event.
+
+### Migration Notes
+
+- No action required. Repositories with Pi hooks installed pick up the bounded
+  extension after `mainline hooks install --agent pi` (or a fresh
+  `mainline init`); the previously generated extension keeps working but
+  without the new stdout/context caps.
+
+### Known Alpha Limits
+
+- Hook context budgets are fixed constants in this release; they are not yet
+  configurable per repository.
+
 ## [0.5.0] - 2026-07-03
 
 ### Added
