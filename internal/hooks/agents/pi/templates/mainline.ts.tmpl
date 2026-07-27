@@ -9,6 +9,10 @@ const MAINLINE_COMMAND = {{ .Command }};
 const MAINLINE_ARGS_PREFIX = {{ .ArgsPrefix }};
 const MAINLINE_COMMAND_CWD: string | undefined = {{ .CommandCwd }};
 const HOOK_TIMEOUT_MS = 30000;
+const HOOK_STDOUT_MAX_CHARS = 256 * 1024;
+const MAINLINE_CONTEXT_MAX_CHARS = 48 * 1024;
+const CONTEXT_LIMIT_WARNING =
+	"# Mainline hook context omitted\n\nThe hook returned more context than Pi's safety budget permits. Run `mainline preflight --json`, `mainline status --json`, and task-specific `mainline context` / `mainline show` commands to load details on demand.";
 
 type HookOutput = {
 	systemPromptAppend?: string;
@@ -29,7 +33,21 @@ function sessionId(ctx: { sessionManager?: { getSessionFile?: () => string | und
 }
 
 function extractContext(out: HookOutput | undefined): string | undefined {
-	return out?.systemPromptAppend ?? out?.additionalContext ?? out?.context;
+	const context = out?.systemPromptAppend ?? out?.additionalContext ?? out?.context;
+	if (!context) return undefined;
+	if (context.length <= MAINLINE_CONTEXT_MAX_CHARS) return context;
+	debug("hook context exceeded Pi safety budget; injecting compact warning");
+	return CONTEXT_LIMIT_WARNING;
+}
+
+function combineContexts(parts: Array<string | undefined>): string | undefined {
+	const combined = parts.filter(
+		(part): part is string => typeof part === "string" && part.length > 0,
+	).join("\n\n");
+	if (!combined) return undefined;
+	if (combined.length <= MAINLINE_CONTEXT_MAX_CHARS) return combined;
+	debug("combined hook context exceeded Pi safety budget; injecting compact warning");
+	return CONTEXT_LIMIT_WARNING;
 }
 
 async function runMainlineHook(
@@ -47,25 +65,37 @@ async function runMainlineHook(
 
 		let stdout = "";
 		let stderr = "";
+		let settled = false;
+		const finish = (value: HookOutput | undefined): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve(value);
+		};
 		const timer = setTimeout(() => {
 			debug("timed out running " + hookName);
 			child.kill("SIGTERM");
-			resolve(undefined);
+			finish(undefined);
 		}, HOOK_TIMEOUT_MS);
 
 		child.stdout.on("data", (chunk) => {
+			if (settled) return;
 			stdout += String(chunk);
+			if (stdout.length > HOOK_STDOUT_MAX_CHARS) {
+				debug("stdout from " + hookName + " exceeded safety budget");
+				child.kill("SIGTERM");
+				finish({ systemPromptAppend: CONTEXT_LIMIT_WARNING });
+			}
 		});
 		child.stderr.on("data", (chunk) => {
 			stderr += String(chunk);
 		});
 		child.on("error", (err) => {
-			clearTimeout(timer);
 			debug("failed to run " + hookName + ": " + err.message);
-			resolve(undefined);
+			finish(undefined);
 		});
 		child.on("close", (code, signal) => {
-			clearTimeout(timer);
+			if (settled) return;
 			if (signal) {
 				debug("exited " + hookName + " with signal " + signal);
 			} else if (code !== 0) {
@@ -74,14 +104,14 @@ async function runMainlineHook(
 			if (stderr.trim()) debug("stderr from " + hookName + ": " + stderr.trim());
 			const text = stdout.trim();
 			if (!text) {
-				resolve(undefined);
+				finish(undefined);
 				return;
 			}
 			try {
-				resolve(JSON.parse(text) as HookOutput);
+				finish(JSON.parse(text) as HookOutput);
 			} catch {
 				debug("non-JSON hook output from " + hookName);
-				resolve(undefined);
+				finish(undefined);
 			}
 		});
 		child.stdin.on("error", (err) => {
@@ -92,7 +122,7 @@ async function runMainlineHook(
 			child.stdin.end(JSON.stringify(payload));
 		} catch (err) {
 			debug("failed to write payload for " + hookName + ": " + String(err));
-			resolve(undefined);
+			finish(undefined);
 		}
 	});
 }
@@ -126,12 +156,10 @@ export default function mainlinePiExtension(pi: ExtensionAPI) {
 			},
 			ctx.cwd,
 		);
-		const parts = [pendingSessionContext, extractContext(out)].filter(
-			(part): part is string => typeof part === "string" && part.length > 0,
-		);
+		const context = combineContexts([pendingSessionContext, extractContext(out)]);
 		pendingSessionContext = undefined;
-		if (parts.length === 0) return undefined;
-		return { systemPrompt: event.systemPrompt + "\n\n" + parts.join("\n\n") };
+		if (!context) return undefined;
+		return { systemPrompt: event.systemPrompt + "\n\n" + context };
 	});
 
 	pi.on("agent_end", async (event, ctx) => {

@@ -83,6 +83,15 @@ type nopNotifier struct{}
 
 func (nopNotifier) Notify(string) {}
 
+const (
+	// Hook context is injected into an agent's system prompt, so it must stay
+	// comfortably below model context limits even when repository state is huge.
+	sessionStartContextMaxBytes = 32 * 1024
+	turnStartContextMaxBytes    = 16 * 1024
+	contextListLimit            = 5
+	contextStringMaxBytes       = 2 * 1024
+)
+
 // Dispatcher is the central event-to-action router. One instance per
 // hook invocation; constructed by the cli, fed an Event by the
 // agent's ParseEvent, and produces engine state changes + emits
@@ -329,14 +338,13 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 	b.WriteString("## status snapshot\n\n")
 	if status == nil {
 		b.WriteString("_status unavailable_\n\n")
-	} else if raw, err := json.MarshalIndent(status, "", "  "); err == nil {
+	} else if raw, ok := compactStatusJSON(status); ok {
 		b.WriteString("```json\n")
 		b.Write(raw)
 		b.WriteString("\n```\n\n")
+		b.WriteString("_Large status collections are summarized; use `mainline status --json`, `mainline preflight --json`, or `mainline show <intent_id> --json` for details._\n\n")
 	} else {
-		b.WriteString("_status unmarshallable: ")
-		b.WriteString(err.Error())
-		b.WriteString("_\n\n")
+		b.WriteString("_status unavailable or unmarshallable_\n\n")
 	}
 
 	b.WriteString("## sync summary\n\n")
@@ -346,14 +354,13 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 		b.WriteString("`. Treat this snapshot as potentially stale and re-run `mainline sync` once your network is healthy.\n\n")
 	} else if syncResult == nil {
 		b.WriteString("_sync was disabled or skipped_\n\n")
-	} else if raw, err := json.MarshalIndent(syncResult, "", "  "); err == nil {
+	} else if raw, ok := compactArbitraryJSON(syncResult); ok {
 		b.WriteString("```json\n")
 		b.Write(raw)
 		b.WriteString("\n```\n\n")
+		b.WriteString("_Large sync collections are summarized; run `mainline sync --json` for the full result._\n\n")
 	} else {
-		b.WriteString("_sync result unmarshallable: ")
-		b.WriteString(err.Error())
-		b.WriteString("_\n\n")
+		b.WriteString("_sync result unavailable or unmarshallable_\n\n")
 	}
 
 	b.WriteString("## what to do next\n\n")
@@ -365,7 +372,7 @@ func (d *Dispatcher) RenderSessionStartContext(syncResult any, status any) strin
 	b.WriteString("- When the task is complete, commit code, then `mainline seal --prepare --json`, fill the SealResult (fingerprint generously), then `mainline seal --submit --json < seal.json`. If the response carries a `conflicts` array, treat it as phase-1 overlap warnings: inspect/classify first, escalate only when uncertain or likely semantic, and do not paste raw JSON by default.\n")
 	b.WriteString("- Re-run `mainline status` whenever you are about to make an architectural decision; sessionStart context is a one-shot snapshot, not a live view.\n")
 	b.WriteString("<!-- /mainline:context -->\n")
-	return b.String()
+	return boundHookContext(b.String(), sessionStartContextMaxBytes)
 }
 
 // RenderTurnStartContext composes the small per-prompt reminder used
@@ -412,9 +419,9 @@ func (d *Dispatcher) RenderTurnStartContext(status any, proposals any, statusErr
 	b.WriteString("- Read-only diagnosis, history lookup, or proposal-only prompts should not start an intent.\n")
 	b.WriteString("- If there is no `active_intent`, start one only when the prompt authorizes non-trivial edits, commit/seal/handoff, or another durable engineering record.\n")
 	b.WriteString("- If there is an `active_intent`, append only after a meaningful logical change; hooks still do not decide that for you.\n")
-	b.WriteString("- Before non-trivial changes, still run task-specific Mainline context commands when this snapshot is not enough.\n")
+	b.WriteString("- Before non-trivial changes, run task-specific commands such as `mainline context --files <path>... --json`, `mainline context --query \"<task summary>\" --json`, or `mainline show <intent_id> --json` when this snapshot is not enough.\n")
 	b.WriteString("<!-- /mainline:context -->\n")
-	return b.String()
+	return boundHookContext(b.String(), turnStartContextMaxBytes)
 }
 
 func compactStatusJSON(status any) ([]byte, bool) {
@@ -426,45 +433,183 @@ func compactStatusJSON(status any) ([]byte, bool) {
 		return nil, false
 	}
 	var in struct {
+		Initialized  bool   `json:"initialized"`
 		Branch       string `json:"branch,omitempty"`
 		ActorID      string `json:"actor_id,omitempty"`
+		LocalHead    string `json:"local_head,omitempty"`
+		MainHead     string `json:"main_head,omitempty"`
 		ActiveIntent *struct {
 			IntentID string `json:"intent_id,omitempty"`
 			Status   string `json:"status,omitempty"`
 			Thread   string `json:"thread,omitempty"`
 			Goal     string `json:"goal,omitempty"`
+			Turns    []any  `json:"turns,omitempty"`
 		} `json:"active_intent,omitempty"`
 		TurnCount     int  `json:"turn_count"`
 		ProposedCount int  `json:"proposed_count"`
 		SyncStale     bool `json:"sync_stale"`
 		Coverage      *struct {
-			UncoveredCount int `json:"uncovered_count"`
+			WindowSize     int   `json:"window_size"`
+			CoveredCount   int   `json:"covered_count"`
+			SkippedCount   int   `json:"skipped_count"`
+			UncoveredCount int   `json:"uncovered_count"`
+			Uncovered      []any `json:"uncovered,omitempty"`
 		} `json:"coverage,omitempty"`
+		AgentAuthority *struct {
+			Team struct {
+				Autonomy    string `json:"autonomy,omitempty"`
+				MaxAutonomy string `json:"max_autonomy,omitempty"`
+				Source      string `json:"source,omitempty"`
+			} `json:"team"`
+			Effective struct {
+				Autonomy string `json:"autonomy,omitempty"`
+				StopLine string `json:"stop_line,omitempty"`
+			} `json:"effective"`
+			Current struct {
+				AllowedBoundary    string `json:"allowed_boundary,omitempty"`
+				BlockedByPreflight bool   `json:"blocked_by_preflight"`
+			} `json:"current"`
+		} `json:"agent_authority,omitempty"`
+		Suggestions     []string `json:"suggestions,omitempty"`
+		ActionableItems []struct {
+			Kind               string `json:"kind,omitempty"`
+			Title              string `json:"title,omitempty"`
+			RecommendedCommand string `json:"recommended_command,omitempty"`
+		} `json:"actionable_items,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil, false
 	}
-	out := struct {
-		Branch         string `json:"branch,omitempty"`
-		ActorID        string `json:"actor_id,omitempty"`
-		ActiveIntent   any    `json:"active_intent,omitempty"`
-		TurnCount      int    `json:"turn_count"`
-		ProposedCount  int    `json:"proposed_count"`
-		SyncStale      bool   `json:"sync_stale"`
-		UncoveredCount *int   `json:"uncovered_count,omitempty"`
-	}{
-		Branch:        in.Branch,
-		ActorID:       in.ActorID,
-		ActiveIntent:  in.ActiveIntent,
-		TurnCount:     in.TurnCount,
-		ProposedCount: in.ProposedCount,
-		SyncStale:     in.SyncStale,
+
+	type compactIntent struct {
+		IntentID     string `json:"intent_id,omitempty"`
+		Status       string `json:"status,omitempty"`
+		Thread       string `json:"thread,omitempty"`
+		Goal         string `json:"goal,omitempty"`
+		TurnsOmitted int    `json:"turns_omitted,omitempty"`
 	}
+	type compactCoverage struct {
+		WindowSize       int `json:"window_size"`
+		CoveredCount     int `json:"covered_count"`
+		SkippedCount     int `json:"skipped_count"`
+		UncoveredCount   int `json:"uncovered_count"`
+		UncoveredOmitted int `json:"uncovered_details_omitted,omitempty"`
+	}
+	var active any
+	if in.ActiveIntent != nil {
+		active = compactIntent{
+			IntentID:     in.ActiveIntent.IntentID,
+			Status:       in.ActiveIntent.Status,
+			Thread:       in.ActiveIntent.Thread,
+			Goal:         truncateContextString(in.ActiveIntent.Goal),
+			TurnsOmitted: len(in.ActiveIntent.Turns),
+		}
+	}
+	var coverage *compactCoverage
 	if in.Coverage != nil {
-		out.UncoveredCount = &in.Coverage.UncoveredCount
+		coverage = &compactCoverage{
+			WindowSize:       in.Coverage.WindowSize,
+			CoveredCount:     in.Coverage.CoveredCount,
+			SkippedCount:     in.Coverage.SkippedCount,
+			UncoveredCount:   in.Coverage.UncoveredCount,
+			UncoveredOmitted: len(in.Coverage.Uncovered),
+		}
+	}
+	suggestionLimit := len(in.Suggestions)
+	if suggestionLimit > contextListLimit {
+		suggestionLimit = contextListLimit
+	}
+	for i := 0; i < suggestionLimit; i++ {
+		in.Suggestions[i] = truncateContextString(in.Suggestions[i])
+	}
+	actionableLimit := len(in.ActionableItems)
+	if actionableLimit > contextListLimit {
+		actionableLimit = contextListLimit
+	}
+	for i := 0; i < actionableLimit; i++ {
+		in.ActionableItems[i].Title = truncateContextString(in.ActionableItems[i].Title)
+		in.ActionableItems[i].RecommendedCommand = truncateContextString(in.ActionableItems[i].RecommendedCommand)
+	}
+	out := struct {
+		Initialized        bool             `json:"initialized"`
+		Branch             string           `json:"branch,omitempty"`
+		ActorID            string           `json:"actor_id,omitempty"`
+		LocalHead          string           `json:"local_head,omitempty"`
+		MainHead           string           `json:"main_head,omitempty"`
+		ActiveIntent       any              `json:"active_intent,omitempty"`
+		TurnCount          int              `json:"turn_count"`
+		ProposedCount      int              `json:"proposed_count"`
+		SyncStale          bool             `json:"sync_stale"`
+		Coverage           *compactCoverage `json:"coverage,omitempty"`
+		AgentAuthority     any              `json:"agent_authority,omitempty"`
+		Suggestions        []string         `json:"suggestions,omitempty"`
+		SuggestionsOmitted int              `json:"suggestions_omitted,omitempty"`
+		ActionableItems    any              `json:"actionable_items,omitempty"`
+		ActionableOmitted  int              `json:"actionable_items_omitted,omitempty"`
+	}{
+		Initialized:        in.Initialized,
+		Branch:             truncateContextString(in.Branch),
+		ActorID:            truncateContextString(in.ActorID),
+		LocalHead:          truncateContextString(in.LocalHead),
+		MainHead:           truncateContextString(in.MainHead),
+		ActiveIntent:       active,
+		TurnCount:          in.TurnCount,
+		ProposedCount:      in.ProposedCount,
+		SyncStale:          in.SyncStale,
+		Coverage:           coverage,
+		AgentAuthority:     in.AgentAuthority,
+		Suggestions:        in.Suggestions[:suggestionLimit],
+		SuggestionsOmitted: len(in.Suggestions) - suggestionLimit,
+		ActionableItems:    in.ActionableItems[:actionableLimit],
+		ActionableOmitted:  len(in.ActionableItems) - actionableLimit,
 	}
 	raw, err = json.MarshalIndent(out, "", "  ")
 	return raw, err == nil
+}
+
+func compactArbitraryJSON(value any) ([]byte, bool) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, false
+	}
+	compacted := compactJSONValue(decoded, 0)
+	raw, err = json.MarshalIndent(compacted, "", "  ")
+	return raw, err == nil
+}
+
+func compactJSONValue(value any, depth int) any {
+	if depth >= 6 {
+		return "[nested value omitted]"
+	}
+	switch value := value.(type) {
+	case string:
+		return truncateContextString(value)
+	case []any:
+		limit := len(value)
+		if limit > contextListLimit {
+			limit = contextListLimit
+		}
+		out := make([]any, 0, limit+1)
+		for _, item := range value[:limit] {
+			out = append(out, compactJSONValue(item, depth+1))
+		}
+		if omitted := len(value) - limit; omitted > 0 {
+			out = append(out, map[string]any{"omitted": omitted})
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, item := range value {
+			out[key] = compactJSONValue(item, depth+1)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func compactProposalsJSON(proposals any) ([]byte, bool) {
@@ -487,20 +632,57 @@ func compactProposalsJSON(proposals any) ([]byte, bool) {
 		return nil, false
 	}
 	limit := len(in.Proposals)
-	if limit > 5 {
-		limit = 5
+	if limit > contextListLimit {
+		limit = contextListLimit
+	}
+	for i := 0; i < limit; i++ {
+		in.Proposals[i].Title = truncateContextString(in.Proposals[i].Title)
 	}
 	out := struct {
 		Count     int `json:"count"`
 		Shown     int `json:"shown"`
+		Omitted   int `json:"omitted,omitempty"`
 		Proposals any `json:"proposals"`
 	}{
 		Count:     len(in.Proposals),
 		Shown:     limit,
+		Omitted:   len(in.Proposals) - limit,
 		Proposals: in.Proposals[:limit],
 	}
 	raw, err = json.MarshalIndent(out, "", "  ")
 	return raw, err == nil
+}
+
+func truncateContextString(value string) string {
+	if len(value) <= contextStringMaxBytes {
+		return value
+	}
+	return truncateUTF8(value, contextStringMaxBytes-len("… [truncated]")) + "… [truncated]"
+}
+
+func boundHookContext(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	marker := "\n\n> **Mainline context truncated to its safety budget.** Run `mainline preflight --json`, `mainline status --json`, and task-specific `mainline context` / `mainline show` commands for omitted details.\n\n<!-- /mainline:context -->\n"
+	if len(marker) >= maxBytes {
+		return truncateUTF8(marker, maxBytes)
+	}
+	return truncateUTF8(value, maxBytes-len(marker)) + marker
+}
+
+func truncateUTF8(value string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := maxBytes
+	for end > 0 && value[end]&0xc0 == 0x80 {
+		end--
+	}
+	return value[:end]
 }
 
 // -----------------------------------------------------------

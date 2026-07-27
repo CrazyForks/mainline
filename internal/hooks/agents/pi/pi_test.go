@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -42,6 +44,11 @@ func TestInstallWritesManagedExtensionAndIsIdempotent(t *testing.T) {
 		`debug("running " + hookName + " in " + commandCwd);`,
 		`debug("exited " + hookName + " with code " + code`,
 		`systemPromptAppend`,
+		`const HOOK_STDOUT_MAX_CHARS = 256 * 1024;`,
+		`const MAINLINE_CONTEXT_MAX_CHARS = 48 * 1024;`,
+		`hook context exceeded Pi safety budget`,
+		`combined hook context exceeded Pi safety budget`,
+		`stdout from " + hookName + " exceeded safety budget`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("extension missing %q:\n%s", want, text)
@@ -65,6 +72,76 @@ func TestInstallWritesManagedExtensionAndIsIdempotent(t *testing.T) {
 	}
 	if st.CommandMode != hooks.CommandModeBin {
 		t.Fatalf("status CommandMode = %q, want %q", st.CommandMode, hooks.CommandModeBin)
+	}
+}
+
+func TestGeneratedExtensionEnforcesContextBudgets(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses an executable script as the fake mainline command")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not available")
+	}
+	if err := exec.Command(node, "--experimental-strip-types", "--input-type=module", "--eval", "").Run(); err != nil {
+		t.Skip("node does not support TypeScript type stripping")
+	}
+
+	dir := t.TempDir()
+	fakeMainline := filepath.Join(dir, "fake-mainline")
+	fakeSource := `#!/usr/bin/env node
+const hook = process.argv.at(-1);
+const scenario = process.env.FAKE_MAINLINE_SCENARIO;
+let size = 2;
+if (scenario === "combined") size = hook === "session-start" ? 40000 : 20000;
+if (scenario === "single") size = hook === "user-prompt-submit" ? 50000 : 2;
+if (scenario === "stdout") size = hook === "user-prompt-submit" ? 300000 : 2;
+process.stdout.write(JSON.stringify({systemPromptAppend: "X".repeat(size)}));
+`
+	if err := os.WriteFile(fakeMainline, []byte(fakeSource), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Agent{}).Install(dir, hooks.InstallOptions{BinPath: fakeMainline}); err != nil {
+		t.Fatal(err)
+	}
+
+	harnessPath := filepath.Join(dir, "probe.mjs")
+	harness := `import mainlinePiExtension from "./.pi/extensions/mainline.ts";
+const handlers = new Map();
+mainlinePiExtension({on: (name, handler) => handlers.set(name, handler)});
+const ctx = {cwd: process.cwd(), sessionManager: {getSessionFile: () => "session.jsonl"}};
+await handlers.get("session_start")({reason: "new"}, ctx);
+const result = await handlers.get("before_agent_start")({prompt: "test", systemPrompt: "BASE"}, ctx);
+const prompt = result?.systemPrompt ?? "";
+process.stdout.write(JSON.stringify({
+  warning: prompt.includes("Mainline hook context omitted"),
+  leaked: prompt.includes("XXXXXXXXXX"),
+}));
+`
+	if err := os.WriteFile(harnessPath, []byte(harness), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, scenario := range []string{"single", "combined", "stdout"} {
+		t.Run(scenario, func(t *testing.T) {
+			cmd := exec.Command(node, "--experimental-strip-types", harnessPath)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "FAKE_MAINLINE_SCENARIO="+scenario)
+			raw, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("run generated extension: %v", err)
+			}
+			var got struct {
+				Warning bool `json:"warning"`
+				Leaked  bool `json:"leaked"`
+			}
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("decode probe output: %v\n%s", err, raw)
+			}
+			if !got.Warning || got.Leaked {
+				t.Fatalf("unexpected bounded context result: %#v", got)
+			}
+		})
 	}
 }
 
