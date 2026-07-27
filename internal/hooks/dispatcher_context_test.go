@@ -1,8 +1,10 @@
 package hooks
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestRenderSessionStartContextBoundsLargeState(t *testing.T) {
@@ -42,11 +44,17 @@ func TestRenderSessionStartContextBoundsLargeState(t *testing.T) {
 		},
 	}
 	syncResult := map[string]any{"changes": changes}
+	for i := 0; i < 20; i++ {
+		syncResult[fmt.Sprintf("padding_%02d", i)] = strings.Repeat("边界", 2000)
+	}
 
 	d := NewDispatcher(nil, nil, DefaultDispatchSettings())
 	got := d.RenderSessionStartContext(syncResult, status)
 	if len(got) > sessionStartContextMaxBytes {
 		t.Fatalf("session context = %d bytes, budget = %d", len(got), sessionStartContextMaxBytes)
+	}
+	if !utf8.ValidString(got) {
+		t.Fatal("bounded session context is not valid UTF-8")
 	}
 	for _, want := range []string{
 		"int_large",
@@ -55,6 +63,7 @@ func TestRenderSessionStartContextBoundsLargeState(t *testing.T) {
 		`"turns_omitted": 500`,
 		`"uncovered_details_omitted": 500`,
 		`"omitted": 495`,
+		"Mainline context truncated to its safety budget",
 		"mainline status --json",
 	} {
 		if !strings.Contains(got, want) {
@@ -74,6 +83,7 @@ func TestRenderTurnStartContextBoundsLargeStrings(t *testing.T) {
 		proposals[i] = map[string]any{
 			"intent_id": "int_other",
 			"title":     strings.Repeat("proposal-title ", 1000),
+			"thread":    strings.Repeat("分支/", 6000),
 		}
 	}
 	status := map[string]any{
@@ -89,7 +99,10 @@ func TestRenderTurnStartContextBoundsLargeStrings(t *testing.T) {
 	if len(got) > turnStartContextMaxBytes {
 		t.Fatalf("turn context = %d bytes, budget = %d", len(got), turnStartContextMaxBytes)
 	}
-	for _, want := range []string{"int_large", "[truncated]", `"omitted": 25`, "mainline context"} {
+	if !utf8.ValidString(got) {
+		t.Fatal("bounded turn context is not valid UTF-8")
+	}
+	for _, want := range []string{"int_large", "[truncated]", `"omitted": 25`, "Mainline context truncated to its safety budget", "mainline context"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("bounded turn context missing %q:\n%s", want, got)
 		}
